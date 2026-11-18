@@ -1,15 +1,37 @@
 from typing import List, Dict, Any, Set, Tuple, Optional
-import itertools
 import re
-import networkx as nx
 from .schemas import CausalNode, CausalEdge, ProjectState
+from . import causal_core as cc
+
+
+IDENTIFICATION_ASSUMPTIONS = {
+    "total_effect": [
+        "The DAG is complete: no unmodelled common cause of any pair of variables beyond the latent nodes and bidirected edges drawn.",
+        "Edge directions are correct, and every missing edge is a true absence of direct effect.",
+        "Positivity: every exposure level is possible within every stratum of the adjustment set.",
+        "Consistency and no interference between units (SUTVA).",
+        "Adjustment variables are measured without important error.",
+    ],
+    "direct_effect": [
+        "All assumptions listed for the total effect.",
+        "The single-door criterion identifies the x -> y path coefficient in a linear structural equation model. For non-linear models, read it as a controlled direct effect, which additionally requires no exposure-mediator interaction to be summarised by one number.",
+    ],
+}
+
+WEAK_CLASSES = {
+    "ai_hypothesis", "ai_proposed", "author_hypothesis", "researcher_hypothesis",
+    "hypothesized", "contested", "empirical_association",
+}
 
 
 class CausalEngine:
     """
-    Deterministic Pearlian Causal Graph Engine (DAGitty-equivalent).
-    Computes d-separation, backdoor paths, minimal sufficient adjustment sets,
-    collider traps, overadjustment warnings, IV candidates, and multi-format code exports.
+    Deterministic causal graph engine.
+
+    Identification uses complete graphical criteria implemented in
+    ``causal_core``: the generalised adjustment criterion for total effects and
+    the single-door criterion for direct effects. Path listings are produced
+    for explanation only and never decide validity.
     """
 
     def __init__(self, nodes: List[CausalNode], edges: List[CausalEdge]):
@@ -18,16 +40,26 @@ class CausalEngine:
         self.all_edges_list = edges
         self.node_map: Dict[str, CausalNode] = {n.id: n for n in nodes}
 
-        self.G = nx.DiGraph()
-        for n in nodes:
-            self.G.add_node(n.id, **n.model_dump())
-
+        directed, bidirected = [], []
         for e in self.edges_list:
-            if e.source in self.node_map and e.target in self.node_map:
-                self.G.add_edge(e.source, e.target, **e.model_dump())
-                if e.epistemic_status == "bidirectional_confounded":
-                    # Represent latent common cause U between source and target if needed
-                    pass
+            if e.source not in self.node_map or e.target not in self.node_map:
+                continue
+            if self._is_bidirected(e):
+                bidirected.append((e.source, e.target))
+            else:
+                directed.append((e.source, e.target))
+        latent = {n.id for n in nodes if not n.observed or n.role == "latent"}
+        self.cg = cc.build_graph([n.id for n in nodes], directed, bidirected, latent)
+        self.G = self.cg.G
+
+    @staticmethod
+    def _is_bidirected(e: CausalEdge) -> bool:
+        return getattr(e, "edge_type", "directed") == "bidirected" or e.epistemic_status == "bidirectional_confounded"
+
+    # ---------------------------------------------------------------- basics
+    def label(self, nid: Optional[str]) -> str:
+        n = self.node_map.get(nid) if nid else None
+        return n.label if n else (nid or "")
 
     def get_exposures(self) -> List[str]:
         return [n.id for n in self.nodes_list if n.role == "exposure"]
@@ -43,22 +75,16 @@ class CausalEngine:
         }
 
     def get_observable_nodes(self) -> Set[str]:
-        return {
-            n.id
-            for n in self.nodes_list
-            if n.observed and n.role != "latent"
-        }
+        return {n.id for n in self.nodes_list if n.observed and n.role != "latent"}
 
     def check_cycles(self) -> List[List[str]]:
-        try:
-            cycles = list(nx.simple_cycles(self.G))
-            return cycles
-        except Exception:
-            return []
+        return self.cg.cycles()
 
     def check_temporal_violations(self) -> List[Dict[str, Any]]:
         violations = []
         for e in self.edges_list:
+            if self._is_bidirected(e):
+                continue
             u = self.node_map.get(e.source)
             v = self.node_map.get(e.target)
             if u and v and u.time_index > v.time_index:
@@ -67,459 +93,257 @@ class CausalEngine:
                         "edge_id": e.id,
                         "source": u.label,
                         "target": v.label,
-                        "source_time": u.time_index,
-                        "target_time": v.time_index,
-                        "message": f"Temporal violation: '{u.label}' (t={u.time_index}) points backward in time to '{v.label}' (t={v.time_index}).",
+                        "message": f"'{u.label}' (t{u.time_index}) points backward in time to '{v.label}' (t{v.time_index}). A cause cannot follow its effect.",
                     }
                 )
         return violations
 
-    def descendants_of(self, node_id: str) -> Set[str]:
-        if node_id not in self.G or not nx.is_directed_acyclic_graph(self.G):
-            try:
-                return nx.descendants(self.G, node_id)
-            except Exception:
-                return set()
-        return nx.descendants(self.G, node_id)
+    def _fmt_set(self, s) -> List[Dict[str, str]]:
+        return [{"id": nid, "label": self.label(nid)} for nid in sorted(s)]
 
-    def ancestors_of(self, node_id: str) -> Set[str]:
-        if node_id not in self.G:
-            return set()
-        try:
-            return nx.ancestors(self.G, node_id)
-        except Exception:
-            return set()
-
-    def analyze_path(
-        self, path: List[str], conditioned_set: Set[str]
-    ) -> Dict[str, Any]:
-        """
-        Analyzes a single undirected path [v_0, v_1, ..., v_k] between X=v_0 and Y=v_k
-        using Pearl's exact d-separation criteria under conditioned_set Z.
-        """
-        k = len(path) - 1
-        arrows = []
-        for i in range(k):
-            u, v = path[i], path[i + 1]
-            has_fwd = self.G.has_edge(u, v)
-            has_rev = self.G.has_edge(v, u)
-            if has_fwd and not has_rev:
-                arrows.append("->")
-            elif has_rev and not has_fwd:
-                arrows.append("<-")
-            else:
-                arrows.append("<->")
-
-        # Determine if directed causal path X -> ... -> Y
-        is_directed_causal = all(a == "->" for a in arrows)
-        is_reverse_causal = all(a == "<-" for a in arrows)
-        starts_into_x = len(arrows) > 0 and arrows[0] in ("<-", "<->")
-
-        colliders_on_path: List[str] = []
-        non_colliders_on_path: List[str] = []
-
-        for i in range(1, k):
-            left_arrow = arrows[i - 1]
-            right_arrow = arrows[i]
-            mid_node = path[i]
-            # Collider if -> mid_node <-
-            if left_arrow in ("->", "<->") and right_arrow in ("<-", "<->"):
-                colliders_on_path.append(mid_node)
-            else:
-                non_colliders_on_path.append(mid_node)
-
-        # Precompute ancestors of conditioned_set (a collider is opened if it or any of its descendants is in Z)
-        conditioned_or_ancestors = set(conditioned_set)
-        for z in conditioned_set:
-            conditioned_or_ancestors |= self.ancestors_of(z)
-
-        blocking_nodes: List[str] = []
-        opened_colliders: List[str] = []
-
-        # 1. Non-colliders block the path if they ARE in conditioned_set
-        for nc in non_colliders_on_path:
-            if nc in conditioned_set:
-                blocking_nodes.append(nc)
-
-        # 2. Colliders block the path UNLESS they (or a descendant) are in conditioned_set
-        for col in colliders_on_path:
-            if col in conditioned_or_ancestors:
-                opened_colliders.append(col)
-            else:
-                blocking_nodes.append(col)
-
-        is_open = len(blocking_nodes) == 0
-
-        # Format human-readable path string with arrows
-        pretty_parts = [self.node_map[path[0]].label]
-        for i, a in enumerate(arrows):
-            pretty_parts.append(a)
-            pretty_parts.append(self.node_map[path[i + 1]].label)
-        pretty_str = " ".join(pretty_parts)
-
-        if is_directed_causal:
-            path_type = "causal"
-        elif is_reverse_causal:
-            path_type = "reverse_causal"
-        elif len(colliders_on_path) > 0 and not opened_colliders:
-            path_type = "collider_blocked"
-        elif starts_into_x:
-            path_type = "backdoor"
+    def _fmt_path(self, p: Dict[str, Any]) -> Dict[str, Any]:
+        parts = [self.label(p["nodes"][0])]
+        for a, nid in zip(p["arrows"], p["nodes"][1:]):
+            parts += [a, self.label(nid)]
+        if p["is_directed_causal"]:
+            ptype = "causal"
+        elif p["colliders"] and not p["opened_colliders"]:
+            ptype = "collider_blocked"
+        elif p["starts_into_x"]:
+            ptype = "backdoor"
         else:
-            path_type = "non_causal"
+            ptype = "non_causal"
+        return {**p, "labels": [self.label(n) for n in p["nodes"]], "pretty": " ".join(parts), "path_type": ptype}
 
-        return {
-            "nodes": path,
-            "labels": [self.node_map[n].label for n in path],
-            "pretty": pretty_str,
-            "path_type": path_type,
-            "is_directed_causal": is_directed_causal,
-            "starts_into_x": starts_into_x,
-            "colliders": colliders_on_path,
-            "opened_colliders": opened_colliders,
-            "non_colliders": non_colliders_on_path,
-            "is_open": is_open,
-            "blocking_nodes": blocking_nodes,
-        }
-
-    def enumerate_all_paths(
-        self, exposure: str, outcome: str, conditioned_set: Set[str]
-    ) -> List[Dict[str, Any]]:
-        if exposure not in self.G or outcome not in self.G or exposure == outcome:
-            return []
-        undirected = self.G.to_undirected()
-        results = []
-        try:
-            for simple_path in nx.all_simple_paths(
-                undirected, source=exposure, target=outcome, cutoff=10
-            ):
-                results.append(self.analyze_path(simple_path, conditioned_set))
-        except Exception:
-            pass
-        return results
-
-    def is_valid_adjustment_set(
-        self,
-        exposure: str,
-        outcome: str,
-        candidate_set: Set[str],
-        estimand: str = "total_effect",
-    ) -> bool:
-        desc_x = self.descendants_of(exposure)
-        # Identify nodes on causal paths X -> ... -> Y
-        causal_intermediaries: Set[str] = set()
-        for p in self.enumerate_all_paths(exposure, outcome, set()):
-            if p["is_directed_causal"]:
-                causal_intermediaries.update(p["nodes"][1:-1])
-
-        if estimand == "total_effect":
-            # Adjustment set for total effect cannot contain descendants of X
-            if candidate_set & desc_x:
-                return False
-        else:
-            # Direct effect: cannot contain descendants of Y
-            desc_y = self.descendants_of(outcome)
-            if candidate_set & desc_y:
-                return False
-
-        paths = self.enumerate_all_paths(exposure, outcome, candidate_set)
-        for p in paths:
-            if p["is_directed_causal"]:
-                if estimand == "direct_effect" and len(p["nodes"]) > 2:
-                    # For direct effect, mediated causal paths must be blocked
-                    if p["is_open"]:
-                        return False
-                continue
-            # All non-causal paths must be blocked!
-            if p["is_open"]:
-                return False
-        return True
-
-    def find_minimal_adjustment_sets(
-        self,
-        exposure: str,
-        outcome: str,
-        estimand: str = "total_effect",
-        max_set_size: int = 6,
-    ) -> List[List[Dict[str, str]]]:
-        observable = self.get_observable_nodes() - {exposure, outcome}
-        if estimand == "total_effect":
-            desc_x = self.descendants_of(exposure)
-            candidates = sorted(list(observable - desc_x))
-        else:
-            desc_y = self.descendants_of(outcome)
-            candidates = sorted(list(observable - desc_y))
-
-        valid_sets: List[Set[str]] = []
-        max_k = min(len(candidates), max_set_size)
-
-        for r in range(0, max_k + 1):
-            for combo in itertools.combinations(candidates, r):
-                cand_set = set(combo)
-                # Skip if superset of an already discovered minimal valid set
-                if any(vs.issubset(cand_set) for vs in valid_sets):
-                    continue
-                if self.is_valid_adjustment_set(
-                    exposure, outcome, cand_set, estimand=estimand
-                ):
-                    valid_sets.append(cand_set)
-
-        formatted_sets = []
-        for vs in valid_sets:
-            formatted_sets.append(
-                [
-                    {"id": nid, "label": self.node_map[nid].label}
-                    for nid in sorted(vs)
-                ]
-            )
-        return formatted_sets
-
-    def find_instrumental_variables(
-        self, exposure: str, outcome: str
-    ) -> List[Dict[str, str]]:
-        """
-        Finds structural Instrumental Variable (IV) candidates Z for (X, Y):
-        1. Z has a directed path to X.
-        2. Z has no directed path to Y except through X.
-        3. Z has no open backdoor path to Y when X is removed.
-        """
-        if exposure not in self.G or outcome not in self.G:
-            return []
-        anc_x = self.ancestors_of(exposure)
-        G_no_x = self.G.copy()
-        G_no_x.remove_node(exposure)
-
-        ivs = []
-        for nid in anc_x:
-            if nid == outcome:
-                continue
-            node_obj = self.node_map[nid]
-            if not node_obj.observed or node_obj.role == "latent":
-                continue
-            # Check no directed path to Y in G_no_x
-            if nx.has_path(G_no_x, nid, outcome):
-                continue
-            # Check no open undirected path to Y in G_no_x without colliders
-            paths_z_y = self.enumerate_all_paths(nid, outcome, set())
-            non_x_open = [
-                p
-                for p in paths_z_y
-                if exposure not in p["nodes"] and p["is_open"]
-            ]
-            if not non_x_open:
-                ivs.append({"id": nid, "label": node_obj.label})
-        return ivs
-
-    def infer_structural_roles(
-        self, exposure: Optional[str], outcome: Optional[str]
-    ) -> Dict[str, str]:
-        if not exposure or not outcome or exposure not in self.G or outcome not in self.G:
-            return {}
-        anc_x = self.ancestors_of(exposure)
-        desc_x = self.descendants_of(exposure)
-        anc_y = self.ancestors_of(outcome)
-        desc_y = self.descendants_of(outcome)
-
-        roles: Dict[str, str] = {}
-        for nid, node in self.node_map.items():
-            if nid == exposure:
-                roles[nid] = "exposure"
-            elif nid == outcome:
-                roles[nid] = "outcome"
-            elif not node.observed or node.role == "latent":
-                roles[nid] = "latent"
-            elif nid in desc_x and nid in anc_y:
-                roles[nid] = "mediator"
-            elif nid in anc_x and nid in anc_y:
-                roles[nid] = "confounder"
-            elif nid in desc_x and nid in desc_y:
-                roles[nid] = "collider"
-            elif nid in anc_y and nid not in anc_x and nid not in desc_x:
-                roles[nid] = "competing_exposure"
-            elif nid in anc_x and nid not in anc_y:
-                roles[nid] = "instrument"
-            else:
-                roles[nid] = node.role
-        return roles
-
+    # ---------------------------------------------------------------- diagnostics
     def run_diagnostics(self, estimand: str = "total_effect") -> Dict[str, Any]:
         cycles = self.check_cycles()
-        temporal_violations = self.check_temporal_violations()
-        exposures = self.get_exposures()
-        outcomes = self.get_outcomes()
-        adjusted_set = self.get_adjusted_set()
-
-        exposure = exposures[0] if exposures else None
-        outcome = outcomes[0] if outcomes else None
+        is_dag = not cycles
+        temporal = self.check_temporal_violations()
+        exposures, outcomes = self.get_exposures(), self.get_outcomes()
+        adjusted = self.get_adjusted_set()
+        x = exposures[0] if exposures else None
+        y = outcomes[0] if outcomes else None
 
         warnings: List[Dict[str, str]] = []
         if cycles:
-            cycle_labels = [
-                " -> ".join([self.node_map[n].label for n in c] + [self.node_map[c[0]].label])
-                for c in cycles
-            ]
-            warnings.append(
-                {
-                    "severity": "critical",
-                    "type": "Directed Cycle Detected (Not a DAG)",
-                    "message": f"Graph contains a feedback cycle: {'; '.join(cycle_labels)}. Break the cycle by time-indexing variables (e.g., t0 -> t1 -> t2).",
-                }
-            )
+            loop = "; ".join(" -> ".join(self.label(n) for n in c + [c[0]]) for c in cycles[:3])
+            warnings.append({
+                "severity": "critical",
+                "type": "Directed cycle: the graph is not a DAG",
+                "message": f"Feedback loop: {loop}. Break it by indexing variables in time (for example X at t0 and X at t2).",
+            })
+        for tv in temporal:
+            warnings.append({"severity": "warning", "type": "Temporal order violation", "message": tv["message"]})
+        if len(exposures) > 1 or len(outcomes) > 1:
+            warnings.append({
+                "severity": "info",
+                "type": "Several exposures or outcomes",
+                "message": "Identification is computed for the first exposure and the first outcome only.",
+            })
 
-        for tv in temporal_violations:
-            warnings.append(
-                {
-                    "severity": "warning",
-                    "type": "Temporal Order Violation",
-                    "message": tv["message"],
-                }
-            )
+        structural = {
+            "is_dag": is_dag,
+            "cycles": cycles,
+            "temporal_violations": temporal,
+            "latent_variables": self._fmt_set(n.id for n in self.nodes_list if not n.observed or n.role == "latent"),
+            "bidirected_edges": sum(1 for e in self.edges_list if self._is_bidirected(e)),
+            "paths_truncated": False,
+        }
+        base = {
+            "is_dag": is_dag,
+            "cycles": cycles,
+            "estimand": estimand,
+            "current_adjusted": self._fmt_set(adjusted),
+            "structural": structural,
+            "epistemic_summary": self.compute_epistemic_summary(),
+        }
 
-        if not exposure or not outcome:
+        if not x or not y or not is_dag:
+            if not x or not y:
+                warnings.append({
+                    "severity": "info",
+                    "type": "No exposure or outcome",
+                    "message": "Mark one variable as the exposure and one as the outcome to compute identification.",
+                })
             return {
-                "is_dag": len(cycles) == 0,
-                "cycles": cycles,
-                "exposure": exposure,
-                "outcome": outcome,
-                "estimand": estimand,
-                "current_adjusted": [
-                    {"id": nid, "label": self.node_map[nid].label}
-                    for nid in sorted(adjusted_set)
-                ],
+                **base,
+                "exposure": {"id": x, "label": self.label(x)} if x else None,
+                "outcome": {"id": y, "label": self.label(y)} if y else None,
                 "current_adjustment_valid": False,
                 "identifiable": False,
                 "minimal_adjustment_sets": [],
-                "paths": [],
-                "open_backdoor_paths": [],
-                "causal_paths": [],
+                "paths": [], "open_backdoor_paths": [], "causal_paths": [],
                 "instrumental_variables": [],
                 "structural_roles": {},
-                "warnings": warnings
-                + [
-                    {
-                        "severity": "info",
-                        "type": "Missing Exposure or Outcome",
-                        "message": "Designate one Exposure (Treatment) node and one Outcome node to compute backdoor paths and adjustment sets.",
-                    }
-                ],
-                "epistemic_summary": self.compute_epistemic_summary(),
+                "implied_independencies": [],
+                "identification": {
+                    "status": "not_computed",
+                    "reason": "no exposure or outcome" if (not x or not y) else "the graph has a cycle",
+                },
+                "scientific_support": self.scientific_support(set()),
+                "warnings": warnings,
             }
 
-        all_paths = self.enumerate_all_paths(exposure, outcome, adjusted_set)
-        causal_paths = [p for p in all_paths if p["is_directed_causal"]]
-        open_non_causal = [
-            p for p in all_paths if not p["is_directed_causal"] and p["is_open"]
+        cg = self.cg
+        if estimand == "direct_effect":
+            current_valid = cc.is_single_door_set(cg, x, y, adjusted)
+        else:
+            current_valid = cc.is_adjustment_set(cg, x, y, adjusted)
+        search = cc.minimal_sets(cg, x, y, estimand=estimand)
+        exists = bool(search.sets) or (estimand == "total_effect" and cc.adjustment_exists(cg, x, y))
+
+        raw_paths, truncated = cc.explain_paths(cg, x, y, adjusted)
+        structural["paths_truncated"] = truncated
+        paths = [self._fmt_path(p) for p in raw_paths]
+        causal_paths = [p for p in paths if p["is_directed_causal"]]
+        open_non_causal = [p for p in paths if not p["is_directed_causal"] and p["is_open"]]
+
+        roles = cc.structural_roles(cg, x, y)
+        ivs = [
+            {
+                "id": iv["id"],
+                "label": self.label(iv["id"]),
+                "conditional_on": self._fmt_set(iv["conditional_on"]),
+                "status": "graphical candidate",
+            }
+            for iv in cc.instrument_candidates(cg, x, y)
         ]
-        minimal_sets = (
-            self.find_minimal_adjustment_sets(exposure, outcome, estimand=estimand)
-            if len(cycles) == 0
-            else []
-        )
-        current_valid = (
-            self.is_valid_adjustment_set(
-                exposure, outcome, adjusted_set, estimand=estimand
-            )
-            if len(cycles) == 0
-            else False
-        )
-        structural_roles = self.infer_structural_roles(exposure, outcome)
-        ivs = (
-            self.find_instrumental_variables(exposure, outcome)
-            if len(cycles) == 0
-            else []
-        )
+        implications = [
+            {"a": self._fmt_set([i["a"]])[0], "b": self._fmt_set([i["b"]])[0], "given": self._fmt_set(i["given"])}
+            for i in cc.implied_independencies(cg)
+        ]
 
-        # Check specific methodological traps
-        desc_x = self.descendants_of(exposure)
-        desc_y = self.descendants_of(outcome)
-
-        # 1. Overadjustment on a Mediator
+        # Methodological traps, judged by the criterion rather than by path counts.
         if estimand == "total_effect":
-            for adj_id in adjusted_set:
-                if structural_roles.get(adj_id) == "mediator":
-                    warnings.append(
-                        {
-                            "severity": "critical",
-                            "type": "Overadjustment Bias (Conditioning on Mediator)",
-                            "message": f"You are conditioning on '{self.node_map[adj_id].label}', which lies on the causal pathway from '{self.node_map[exposure].label}' to '{self.node_map[outcome].label}'. This blocks part of the Total Effect.",
-                        }
-                    )
-                elif adj_id in desc_y:
-                    warnings.append(
-                        {
-                            "severity": "critical",
-                            "type": "Selection / Berkson's Bias (Descendant of Outcome)",
-                            "message": f"You are conditioning on '{self.node_map[adj_id].label}', which is a descendant of the Outcome.",
-                        }
-                    )
-
-        # 2. Collider Bias check
-        for p in all_paths:
-            if not p["is_directed_causal"] and p["opened_colliders"] and p["is_open"]:
-                col_names = ", ".join(
-                    self.node_map[c].label for c in p["opened_colliders"]
-                )
-                warnings.append(
-                    {
-                        "severity": "critical",
-                        "type": "Collider Bias / M-Bias Trap Opened",
-                        "message": f"Conditioning on ({col_names}) or its descendant opened a previously blocked path: {p['pretty']}.",
-                    }
-                )
-
-        # 3. Open backdoor paths warning
-        if open_non_causal:
-            warnings.append(
-                {
-                    "severity": "warning",
-                    "type": f"{len(open_non_causal)} Unblocked Non-Causal / Backdoor Path(s)",
-                    "message": f"There are {len(open_non_causal)} open confounding path(s) between '{self.node_map[exposure].label}' and '{self.node_map[outcome].label}' under your current adjustment set.",
-                }
-            )
-
-        # 4. Unidentifiability warning
-        if len(minimal_sets) == 0 and len(open_non_causal) > 0:
-            warnings.append(
-                {
+            forb = cc.forbidden(cg, x, y)
+            for a in sorted(adjusted & forb):
+                kind = roles.get(a, "")
+                if kind == "mediator":
+                    typ = "Overadjustment: conditioning on a mediator"
+                    msg = f"'{self.label(a)}' lies on a causal path from '{self.label(x)}' to '{self.label(y)}'. Adjusting for it removes part of the total effect."
+                elif kind == "descendant_of_outcome":
+                    typ = "Conditioning on a descendant of the outcome"
+                    msg = f"'{self.label(a)}' is caused by the outcome. Adjusting for it can create selection bias."
+                else:
+                    typ = "Conditioning on a forbidden variable"
+                    msg = f"'{self.label(a)}' is a descendant of a variable on the causal path. Adjusting for it biases the total effect."
+                warnings.append({"severity": "critical", "type": typ, "message": msg})
+        else:
+            for a in sorted(adjusted & cc.forbidden_direct(cg, y)):
+                warnings.append({
                     "severity": "critical",
-                    "type": "Unmeasured Confounding (Not Identifiable via Backdoor Adjustment)",
-                    "message": "No observable adjustment set blocks all backdoor paths (likely due to an unobserved/latent confounder). Consider Instrumental Variables (IV), Difference-in-Differences, or E-value sensitivity analysis.",
-                }
-            )
+                    "type": "Conditioning on a descendant of the outcome",
+                    "message": f"'{self.label(a)}' is caused by the outcome. The single-door criterion forbids it.",
+                })
+        seen_colliders = set()
+        for p in open_non_causal:
+            key = tuple(p["opened_colliders"])
+            if p["opened_colliders"] and key not in seen_colliders:
+                seen_colliders.add(key)
+                warnings.append({
+                    "severity": "critical",
+                    "type": "Collider bias: adjustment opens a path",
+                    "message": f"Conditioning on {', '.join(self.label(c) for c in p['opened_colliders'])} (or a descendant) opens {p['pretty']}.",
+                })
+        if not current_valid and open_non_causal:
+            n_open = len(open_non_causal)
+            warnings.append({
+                "severity": "warning",
+                "type": f"{n_open} open non-causal path{'s' if n_open != 1 else ''}",
+                "message": f"The current adjustment leaves {n_open} non-causal path(s) between '{self.label(x)}' and '{self.label(y)}' open.",
+            })
+        if not exists:
+            warnings.append({
+                "severity": "critical",
+                "type": "Not identifiable by covariate adjustment",
+                "message": "No set of observed variables satisfies the criterion, usually because of an unmeasured confounder. Consider an instrument, a front-door mechanism, or a sensitivity analysis (E-value).",
+            })
+        if truncated:
+            warnings.append({
+                "severity": "info",
+                "type": "Path list shortened",
+                "message": "The graph has many paths, so only the first 400 are listed. Validity is still decided exactly by d-separation.",
+            })
 
-        # 5. Epistemic / Uncited Edge warning
-        uncited_edges = [
-            e for e in self.edges_list if len(e.citation_ids) == 0
-        ]
-        if uncited_edges:
-            warnings.append(
-                {
-                    "severity": "info",
-                    "type": f"{len(uncited_edges)} Edge(s) Lack Empirical Citations",
-                    "message": f"{len(uncited_edges)} of {len(self.edges_list)} active causal arrows rely solely on hypothesis without attached literature citations.",
-                }
-            )
+        identification = {
+            "status": "identifiable_by_adjustment" if exists else "not_identifiable_by_adjustment",
+            "criterion": (
+                "single-door criterion (Pearl 2009, Theorem 5.3.1)"
+                if estimand == "direct_effect"
+                else "generalised adjustment criterion (Shpitser et al. 2010; Perkovic et al. 2018)"
+            ),
+            "current_set_valid": current_valid,
+            "search_complete": search.complete,
+            "instrument_note": (
+                "Instrument candidates meet necessary graphical conditions under this DAG only. "
+                "Instrument strength, the exclusion restriction and the absence of instrument-outcome "
+                "confounding are substantive assumptions the graph cannot verify."
+            ),
+            "assumes": IDENTIFICATION_ASSUMPTIONS["direct_effect" if estimand == "direct_effect" else "total_effect"],
+        }
 
         return {
-            "is_dag": len(cycles) == 0,
-            "cycles": cycles,
-            "exposure": {"id": exposure, "label": self.node_map[exposure].label},
-            "outcome": {"id": outcome, "label": self.node_map[outcome].label},
-            "estimand": estimand,
-            "current_adjusted": [
-                {"id": nid, "label": self.node_map[nid].label}
-                for nid in sorted(adjusted_set)
-            ],
+            **base,
+            "exposure": {"id": x, "label": self.label(x)},
+            "outcome": {"id": y, "label": self.label(y)},
             "current_adjustment_valid": current_valid,
-            "identifiable": len(minimal_sets) > 0,
-            "minimal_adjustment_sets": minimal_sets,
-            "paths": all_paths,
+            "identifiable": exists,
+            "minimal_adjustment_sets": [self._fmt_set(s) for s in search.sets],
+            "paths": paths,
             "open_backdoor_paths": open_non_causal,
             "causal_paths": causal_paths,
             "instrumental_variables": ivs,
-            "structural_roles": structural_roles,
+            "structural_roles": roles,
+            "implied_independencies": implications,
+            "identification": identification,
+            "scientific_support": self.scientific_support(cg.an({x, y}) & cg.observed),
             "warnings": warnings,
-            "epistemic_summary": self.compute_epistemic_summary(),
+        }
+
+    # ---------------------------------------------------------------- tier 3
+    def scientific_support(self, relevant_nodes: Set[str]) -> Dict[str, Any]:
+        """Grade the evidence behind every edge that identification relies on.
+
+        Identification depends on the edges among ancestors of the exposure and
+        outcome. Each is graded by its evidence class and its researcher-assessed
+        evidence links.
+        """
+        rows = []
+        for e in self.edges_list:
+            if relevant_nodes and not ({e.source, e.target} <= relevant_nodes):
+                continue
+            cls = getattr(e, "evidence_class", None) or e.epistemic_status
+            links = list(getattr(e, "evidence_links", []) or [])
+            supported = [l for l in links if getattr(l, "researcher_assessment", "not_assessed") in ("supports", "weakly_supports")]
+            contradicted = [l for l in links if getattr(l, "researcher_assessment", "") == "contradicts"]
+            directional = any(getattr(l, "directionality", "") == "established" for l in links)
+            weak_reasons = []
+            if cls in WEAK_CLASSES:
+                weak_reasons.append(f"evidence class is {cls.replace('_', ' ')}")
+            if not e.citation_ids and not links:
+                weak_reasons.append("no linked sources")
+            elif links and not supported:
+                weak_reasons.append("no source assessed by the researcher as supporting it")
+            if contradicted:
+                weak_reasons.append(f"{len(contradicted)} source(s) contradict it")
+            if not self._is_bidirected(e) and not directional and cls not in ("experimental", "quasi_experimental", "mechanistic"):
+                weak_reasons.append("direction not established by any linked study")
+            rows.append({
+                "edge_id": e.id,
+                "edge": f"{self.label(e.source)} {'<->' if self._is_bidirected(e) else '->'} {self.label(e.target)}",
+                "evidence_class": cls,
+                "citations": len(e.citation_ids),
+                "researcher_supported_links": len(supported),
+                "directionality_established": directional,
+                "weak": bool(weak_reasons),
+                "weak_reasons": weak_reasons,
+            })
+        return {
+            "edges": rows,
+            "weak_count": sum(1 for r in rows if r["weak"]),
+            "total": len(rows),
+            "note": "Missing arrows are assumptions too: each absent edge asserts that there is no direct effect.",
         }
 
     def compute_epistemic_summary(self) -> Dict[str, Any]:
