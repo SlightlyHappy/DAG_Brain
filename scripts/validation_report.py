@@ -48,7 +48,7 @@ def section_dsep(n_graphs):
             z = set(rng.sample(rest, rng.randint(0, len(rest))))
             ours = cc.d_separated(cc.CausalGraph(G=G, latent=set()), {x}, {y}, z)
             agree_ref += ours == dsep_moral(G, {x}, {y}, z)
-            agree_nx += ours == nx.is_d_separator(G, {x}, {y}, z)
+            agree_nx += ours == (nx.is_d_separator(G, {x}, {y}, z) if hasattr(nx, "is_d_separator") else nx.d_separated(G, {x}, {y}, z))
             total += 1
     return total, agree_ref, agree_nx
 

@@ -94,6 +94,31 @@ def build_graph(
 # ---------------------------------------------------------------------------
 
 
+def _dsep_moral(G: nx.DiGraph, xs: Set[str], ys: Set[str], zs: Set[str]) -> bool:
+    """d-separation via the moralised ancestral graph (Lauritzen et al. 1990).
+
+    Used when the installed networkx predates ``is_d_separator`` (3.3), so the
+    engine gives the same answers on any networkx version.
+    """
+    keep: Set[str] = set()
+    for v in xs | ys | zs:
+        keep |= nx.ancestors(G, v) | {v}
+    A = G.subgraph(keep)
+    M = nx.Graph()
+    M.add_nodes_from(A.nodes)
+    M.add_edges_from((u, v) for u, v in A.edges)
+    for v in A.nodes:
+        M.add_edges_from(itertools.combinations(list(A.predecessors(v)), 2))
+    M.remove_nodes_from(zs)
+    for comp in nx.connected_components(M):
+        if comp & xs and comp & ys:
+            return False
+    return True
+
+
+_NX_DSEP = getattr(nx, "is_d_separator", None)
+
+
 def d_separated(cg: CausalGraph, xs: Set[str], ys: Set[str], zs: Set[str]) -> bool:
     """True iff every path between xs and ys is blocked by zs (Pearl 2009)."""
     if xs & ys:
@@ -101,7 +126,33 @@ def d_separated(cg: CausalGraph, xs: Set[str], ys: Set[str], zs: Set[str]) -> bo
     xs, ys, zs = set(xs) - set(zs), set(ys) - set(zs), set(zs)
     if not xs or not ys:
         return True
-    return nx.is_d_separator(cg.G, xs, ys, zs)
+    if _NX_DSEP is not None:
+        return _NX_DSEP(cg.G, xs, ys, zs)
+    return _dsep_moral(cg.G, xs, ys, zs)
+
+
+def minimal_separator(cg: CausalGraph, a: str, b: str, restricted: Set[str]) -> Optional[Set[str]]:
+    """A minimal set within ``restricted`` that d-separates a and b, or None.
+
+    Uses networkx's ``find_minimal_d_separator`` when available (3.3+).
+    Otherwise: if any separator inside ``restricted`` exists, the ancestral one
+    An({a, b}) ∩ restricted does; it is then pruned one variable at a time
+    while separation holds.
+    """
+    finder = getattr(nx, "find_minimal_d_separator", None)
+    if finder is not None:
+        try:
+            sep = finder(cg.G, {a}, {b}, included=set(), restricted=set(restricted))
+        except (nx.NetworkXError, nx.NodeNotFound):
+            return None
+        return None if sep is None else set(sep)
+    z = (cg.an({a, b}) & set(restricted)) - {a, b}
+    if not d_separated(cg, {a}, {b}, z):
+        return None
+    for v in sorted(z):
+        if d_separated(cg, {a}, {b}, z - {v}):
+            z = z - {v}
+    return z
 
 
 # ---------------------------------------------------------------------------
@@ -350,13 +401,7 @@ def implied_independencies(cg: CausalGraph) -> List[Dict[str, object]]:
     for a, b in itertools.combinations(obs, 2):
         if _adjacent(cg, a, b):
             continue
-        restricted = cg.observed - {a, b}
-        try:
-            sep = nx.find_minimal_d_separator(
-                cg.G, {a}, {b}, included=set(), restricted=restricted
-            )
-        except (nx.NetworkXError, nx.NodeNotFound):
-            sep = None
+        sep = minimal_separator(cg, a, b, cg.observed - {a, b})
         if sep is None:
             continue
         out.append({"a": a, "b": b, "given": sorted(sep)})

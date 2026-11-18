@@ -72,6 +72,7 @@ def test_minimal_sets_are_valid_minimal_and_existence_is_exact(seed):
         assert bool(found) == brute
 
 
+@pytest.mark.skipif(not hasattr(nx, "find_minimal_d_separator"), reason="needs networkx 3.3+")
 def test_networkx_find_minimal_separator_agrees():
     rng = random.Random(7)
     for _ in range(100):
@@ -81,3 +82,22 @@ def test_networkx_find_minimal_separator_agrees():
             continue
         sep = nx.find_minimal_d_separator(G, {a}, {b})
         assert sep is not None and dsep_moral(G, {a}, {b}, sep)
+
+
+def test_fallbacks_match_networkx_free_paths(monkeypatch):
+    """The engine must give identical answers when networkx lacks the 3.3 d-separation API."""
+    rng = random.Random(11)
+    monkeypatch.setattr(cc, "_NX_DSEP", None)
+    monkeypatch.delattr(nx, "find_minimal_d_separator", raising=False)
+    for _ in range(200):
+        G = random_dag(rng.randint(4, 9), rng.uniform(0.2, 0.5), rng)
+        nodes = list(G.nodes)
+        x, y = rng.sample(nodes, 2)
+        rest = [v for v in nodes if v not in (x, y)]
+        z = set(rng.sample(rest, rng.randint(0, len(rest))))
+        cg = _cg(G)
+        assert cc.d_separated(cg, {x}, {y}, z) == dsep_moral(G, {x}, {y}, z)
+        if not (G.has_edge(x, y) or G.has_edge(y, x)):
+            sep = cc.minimal_separator(cg, x, y, set(rest))
+            assert sep is not None and dsep_moral(G, {x}, {y}, sep)
+            assert all(not dsep_moral(G, {x}, {y}, sep - {v}) for v in sep)
