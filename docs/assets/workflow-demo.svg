@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 250" width="100%" height="100%">
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif; }
+      .flow-line {
+        stroke-dasharray: 7 5;
+        animation: flowAnim 10s linear infinite;
+      }
+      @keyframes flowAnim {
+        to { stroke-dashoffset: -240; }
+      }
+      .step-card {
+        animation: pulseGlow 5s ease-in-out infinite;
+      }
+      .s1 { animation-delay: 0s; }
+      .s2 { animation-delay: 1s; }
+      .s3 { animation-delay: 2s; }
+      .s4 { animation-delay: 3s; }
+      .s5 { animation-delay: 4s; }
+      @keyframes pulseGlow {
+        0%, 100% { opacity: 0.88; }
+        50% { opacity: 1; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.45)); }
+      }
+    </style>
+    <marker id="fArr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#60a5fa" />
+    </marker>
+  </defs>
+
+  <rect width="1150" height="250" rx="14" fill="#0b0f17" stroke="#26334d" stroke-width="2" />
+
+  <g class="sans">
+    <text x="575" y="34" fill="#f8fafc" font-size="16" font-weight="800" text-anchor="middle">
+      🔄 The Auditable 5-Stage Causal Discovery &amp; Verification Loop
+    </text>
+
+    <!-- Animated Connectors -->
+    <line x1="215" y1="135" x2="245" y2="135" stroke="#60a5fa" stroke-width="2.2" class="flow-line" marker-end="url(#fArr)" />
+    <line x1="435" y1="135" x2="465" y2="135" stroke="#60a5fa" stroke-width="2.2" class="flow-line" marker-end="url(#fArr)" />
+    <line x1="655" y1="135" x2="685" y2="135" stroke="#60a5fa" stroke-width="2.2" class="flow-line" marker-end="url(#fArr)" />
+    <line x1="875" y1="135" x2="905" y2="135" stroke="#60a5fa" stroke-width="2.2" class="flow-line" marker-end="url(#fArr)" />
+
+    <!-- Step 1 -->
+    <g transform="translate(25, 58)" class="step-card s1">
+      <rect width="190" height="154" rx="10" fill="#131c2e" stroke="#3b82f6" stroke-width="1.8" />
+      <circle cx="28" cy="28" r="13" fill="rgba(59,130,246,0.2)" stroke="#3b82f6" />
+      <text x="28" y="33" fill="#93c5fd" font-size="12" font-weight="800" text-anchor="middle">1</text>
+      <text x="50" y="32" fill="#f8fafc" font-size="12.5" font-weight="700">Socratic Intake</text>
+      <text x="16" y="62" fill="#cbd5e1" font-size="11">AI interviews researcher</text>
+      <text x="16" y="80" fill="#cbd5e1" font-size="11">on variable definitions,</text>
+      <text x="16" y="98" fill="#cbd5e1" font-size="11">population, &amp; temporal</text>
+      <text x="16" y="116" fill="#cbd5e1" font-size="11">waves (t₀ ≺ t₁ ≺ t₂ ≺ t₃).</text>
+      <text x="16" y="138" fill="#60a5fa" font-size="10" font-weight="700">No premature graph dump</text>
+    </g>
+
+    <!-- Step 2 -->
+    <g transform="translate(245, 58)" class="step-card s2">
+      <rect width="190" height="154" rx="10" fill="#131c2e" stroke="#06b6d4" stroke-width="1.8" />
+      <circle cx="28" cy="28" r="13" fill="rgba(6,182,212,0.2)" stroke="#06b6d4" />
+      <text x="28" y="33" fill="#67e8f9" font-size="12" font-weight="800" text-anchor="middle">2</text>
+      <text x="50" y="32" fill="#f8fafc" font-size="12.5" font-weight="700">Literature Scout</text>
+      <text x="16" y="62" fill="#cbd5e1" font-size="11">Queries OpenAlex &amp;</text>
+      <text x="16" y="80" fill="#cbd5e1" font-size="11">Crossref live. Grades</text>
+      <text x="16" y="98" fill="#cbd5e1" font-size="11">study designs: RCT, MR,</text>
+      <text x="16" y="116" fill="#cbd5e1" font-size="11">Cohort vs Cross-Sectional.</text>
+      <text x="16" y="138" fill="#67e8f9" font-size="10" font-weight="700">APA / AMA / BibTeX ready</text>
+    </g>
+
+    <!-- Step 3 -->
+    <g transform="translate(465, 58)" class="step-card s3">
+      <rect width="190" height="154" rx="10" fill="#131c2e" stroke="#a855f7" stroke-width="1.8" />
+      <circle cx="28" cy="28" r="13" fill="rgba(168,85,247,0.2)" stroke="#a855f7" />
+      <text x="28" y="33" fill="#d8b4fe" font-size="12" font-weight="800" text-anchor="middle">3</text>
+      <text x="50" y="32" fill="#f8fafc" font-size="12.5" font-weight="700">Patch Proposals</text>
+      <text x="16" y="62" fill="#cbd5e1" font-size="11">AI emits structured</text>
+      <text x="16" y="80" fill="#cbd5e1" font-size="11">GraphPatchProposal cards</text>
+      <text x="16" y="98" fill="#cbd5e1" font-size="11">with mechanisms &amp; DOIs.</text>
+      <text x="16" y="116" fill="#cbd5e1" font-size="11">Human approves/rejects.</text>
+      <text x="16" y="138" fill="#d8b4fe" font-size="10" font-weight="700">Zero silent graph mutation</text>
+    </g>
+
+    <!-- Step 4 -->
+    <g transform="translate(685, 58)" class="step-card s4">
+      <rect width="190" height="154" rx="10" fill="#131c2e" stroke="#f59e0b" stroke-width="1.8" />
+      <circle cx="28" cy="28" r="13" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" />
+      <text x="28" y="33" fill="#fcd34d" font-size="12" font-weight="800" text-anchor="middle">4</text>
+      <text x="50" y="32" fill="#f8fafc" font-size="12.5" font-weight="700">Math &amp; Critic #2</text>
+      <text x="16" y="62" fill="#cbd5e1" font-size="11">Python engine computes</text>
+      <text x="16" y="80" fill="#cbd5e1" font-size="11">exact d-separation, minimal</text>
+      <text x="16" y="98" fill="#cbd5e1" font-size="11">adjustment sets, IVs, &amp;</text>
+      <text x="16" y="116" fill="#cbd5e1" font-size="11">collider/mediator traps.</text>
+      <text x="16" y="138" fill="#fcd34d" font-size="10" font-weight="700">Deterministic graph truth</text>
+    </g>
+
+    <!-- Step 5 -->
+    <g transform="translate(905, 58)" class="step-card s5">
+      <rect width="220" height="154" rx="10" fill="#131c2e" stroke="#10b981" stroke-width="1.8" />
+      <circle cx="28" cy="28" r="13" fill="rgba(16,185,129,0.2)" stroke="#10b981" />
+      <text x="28" y="33" fill="#6ee7b7" font-size="12" font-weight="800" text-anchor="middle">5</text>
+      <text x="50" y="32" fill="#f8fafc" font-size="12.5" font-weight="700">Reproducible Export</text>
+      <text x="16" y="62" fill="#cbd5e1" font-size="11">Fork Competing Worldviews</text>
+      <text x="16" y="80" fill="#cbd5e1" font-size="11">&amp; export 1-click code:</text>
+      <text x="16" y="98" fill="#cbd5e1" font-size="11">• R (dagitty / ggdag)</text>
+      <text x="16" y="116" fill="#cbd5e1" font-size="11">• Python (DoWhy) &amp; LaTeX TikZ</text>
+      <text x="16" y="138" fill="#34d399" font-size="10" font-weight="700">Journal-ready Dossier + Refs</text>
+    </g>
+  </g>
+</svg>

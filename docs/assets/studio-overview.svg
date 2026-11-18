@@ -1,0 +1,303 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="100%" height="100%">
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .pulse {
+        stroke-dasharray: 6 4;
+        animation: moveDash 14s linear infinite;
+      }
+      @keyframes moveDash {
+        to { stroke-dashoffset: -200; }
+      }
+    </style>
+    <marker id="mGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
+    </marker>
+    <marker id="mBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+    </marker>
+    <marker id="mPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#a855f7" />
+    </marker>
+  </defs>
+
+  <!-- Outer Window Frame -->
+  <rect width="1200" height="660" rx="14" fill="#0b0f17" stroke="#334155" stroke-width="2" />
+
+  <!-- Topbar -->
+  <rect x="2" y="2" width="1196" height="48" rx="12" fill="#0d1320" />
+  <line x1="0" y1="50" x2="1200" y2="50" stroke="#26334d" stroke-width="1" />
+
+  <g class="sans">
+    <!-- Window Dots -->
+    <circle cx="22" cy="26" r="5.5" fill="#ef4444" />
+    <circle cx="40" cy="26" r="5.5" fill="#f59e0b" />
+    <circle cx="58" cy="26" r="5.5" fill="#10b981" />
+
+    <!-- Topbar Brand & Controls -->
+    <text x="82" y="31" fill="#f8fafc" font-size="14" font-weight="800">DAG_Brain</text>
+    <rect x="164" y="17" width="84" height="20" rx="10" fill="rgba(59,130,246,0.18)" stroke="rgba(59,130,246,0.4)" />
+    <text x="206" y="30" fill="#60a5fa" font-size="10" font-weight="700" text-anchor="middle">Causal Studio</text>
+
+    <!-- Dropdowns -->
+    <rect x="275" y="12" width="235" height="28" rx="6" fill="#1a2333" stroke="#26334d" />
+    <text x="285" y="30" fill="#94a3b8" font-size="10" font-weight="700">STUDY:</text>
+    <text x="328" y="30" fill="#f1f5f9" font-size="11" font-weight="600">Sleep Deprivation &amp; Cognition ▾</text>
+
+    <rect x="520" y="12" width="175" height="28" rx="6" fill="#1a2333" stroke="#26334d" />
+    <text x="530" y="30" fill="#94a3b8" font-size="10" font-weight="700">ESTIMAND:</text>
+    <text x="592" y="30" fill="#34d399" font-size="11" font-weight="600">Total Effect ▾</text>
+
+    <rect x="705" y="12" width="150" height="28" rx="6" fill="#1a2333" stroke="#26334d" />
+    <text x="715" y="30" fill="#94a3b8" font-size="10" font-weight="700">CITE:</text>
+    <text x="748" y="30" fill="#93c5fd" font-size="11" font-weight="600">APA 7th Ed. ▾</text>
+
+    <!-- Action Buttons -->
+    <rect x="875" y="12" width="102" height="28" rx="6" fill="#1a2333" stroke="#334466" />
+    <text x="926" y="30" fill="#f1f5f9" font-size="11" font-weight="600" text-anchor="middle">🔀 Worldviews</text>
+
+    <rect x="985" y="12" width="200" height="28" rx="6" fill="#2563eb" />
+    <text x="1085" y="30" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">⚡ AI: OPENROUTER / OLLAMA</text>
+
+    <!-- ================================================================== -->
+    <!-- PANE 1 (LEFT): LITERATURE & CITATION VAULT                         -->
+    <!-- ================================================================== -->
+    <g transform="translate(0, 50)">
+      <rect width="300" height="608" fill="#111827" />
+      <line x1="300" y1="0" x2="300" y2="608" stroke="#26334d" stroke-width="1" />
+
+      <rect width="299" height="44" fill="#0f1625" />
+      <text x="14" y="20" fill="#f8fafc" font-size="12.5" font-weight="700">📚 Literature &amp; Citation Vault</text>
+      <text x="14" y="35" fill="#94a3b8" font-size="10">OpenAlex / Crossref RAG + Study Design Badges</text>
+
+      <!-- Search bar -->
+      <rect x="10" y="52" width="215" height="28" rx="6" fill="#0d131f" stroke="#26334d" />
+      <text x="20" y="70" fill="#64748b" font-size="10.5">Search OpenAlex papers...</text>
+      <rect x="232" y="52" width="56" height="28" rx="6" fill="#3b82f6" />
+      <text x="260" y="70" fill="#ffffff" font-size="10.5" font-weight="700" text-anchor="middle">Search</text>
+
+      <!-- Source Card 1 -->
+      <g transform="translate(10, 92)">
+        <rect width="280" height="142" rx="8" fill="#1a2333" stroke="#334466" />
+        <text x="10" y="20" fill="#f1f5f9" font-size="11.5" font-weight="700">The sleep-deprived human brain</text>
+        <text x="10" y="36" fill="#94a3b8" font-size="10">Walker, Mander, Archer • 2017 • Nature Rev Neuro</text>
+        <rect x="10" y="44" width="155" height="16" rx="4" fill="rgba(16,185,129,0.18)" stroke="rgba(16,185,129,0.4)" />
+        <text x="16" y="55" fill="#34d399" font-size="9" font-weight="700">Meta-Analysis / Review</text>
+        <rect x="10" y="66" width="260" height="40" rx="4" fill="rgba(0,0,0,0.28)" />
+        <text x="16" y="81" fill="#cbd5e1" font-size="9.5">Sleep loss impairs prefrontal cortical control</text>
+        <text x="16" y="96" fill="#cbd5e1" font-size="9.5">and hippocampal memory consolidation.</text>
+        <rect x="10" y="114" width="102" height="20" rx="4" fill="rgba(59,130,246,0.15)" />
+        <text x="16" y="128" fill="#93c5fd" font-size="9.5" class="mono">(Walker et al., 2017)</text>
+        <rect x="190" y="114" width="80" height="20" rx="4" fill="#10b981" />
+        <text x="230" y="127" fill="#064e3b" font-size="9.5" font-weight="700" text-anchor="middle">✓ Linked Edge</text>
+      </g>
+
+      <!-- Source Card 2 -->
+      <g transform="translate(10, 244)">
+        <rect width="280" height="142" rx="8" fill="#1a2333" stroke="#26334d" />
+        <text x="10" y="20" fill="#f1f5f9" font-size="11.5" font-weight="700">Sleep reactivity &amp; shift work disorder</text>
+        <text x="10" y="36" fill="#94a3b8" font-size="10">Kalmbach, Anderson, Drake • 2018 • Sleep</text>
+        <rect x="10" y="44" width="115" height="16" rx="4" fill="rgba(59,130,246,0.18)" stroke="rgba(59,130,246,0.4)" />
+        <text x="16" y="55" fill="#60a5fa" font-size="9" font-weight="700">Longitudinal Cohort</text>
+        <rect x="132" y="44" width="58" height="16" rx="4" fill="rgba(245,158,11,0.18)" />
+        <text x="140" y="55" fill="#fbbf24" font-size="9" font-weight="700">N = 1,741</text>
+        <rect x="10" y="66" width="260" height="40" rx="4" fill="rgba(0,0,0,0.28)" />
+        <text x="16" y="81" fill="#cbd5e1" font-size="9.5">Baseline stress and HPA hyperarousal precede</text>
+        <text x="16" y="96" fill="#cbd5e1" font-size="9.5">and prospectively predict chronic insomnia.</text>
+        <rect x="10" y="114" width="114" height="20" rx="4" fill="rgba(59,130,246,0.15)" />
+        <text x="16" y="128" fill="#93c5fd" font-size="9.5" class="mono">(Kalmbach et al., 2018)</text>
+        <rect x="180" y="114" width="90" height="20" rx="4" fill="#1e293b" stroke="#475569" />
+        <text x="225" y="127" fill="#e2e8f0" font-size="9.5" font-weight="600" text-anchor="middle">+ Cite Notebook</text>
+      </g>
+
+      <!-- Source Card 3 -->
+      <g transform="translate(10, 396)">
+        <rect width="280" height="132" rx="8" fill="#1a2333" stroke="#26334d" />
+        <text x="10" y="20" fill="#f1f5f9" font-size="11.5" font-weight="700">GWAS loci for habitual sleep duration</text>
+        <text x="10" y="36" fill="#94a3b8" font-size="10">Dashti et al. • 2019 • Nature Communications</text>
+        <rect x="10" y="44" width="175" height="16" rx="4" fill="rgba(59,130,246,0.18)" stroke="rgba(59,130,246,0.4)" />
+        <text x="16" y="55" fill="#60a5fa" font-size="9" font-weight="700">Quasi-Experimental (MR / IV)</text>
+        <rect x="10" y="66" width="260" height="36" rx="4" fill="rgba(0,0,0,0.28)" />
+        <text x="16" y="81" fill="#cbd5e1" font-size="9.5">78 genetic loci provide valid instruments (IV)</text>
+        <text x="16" y="94" fill="#cbd5e1" font-size="9.5">for Mendelian Randomization (N = 446,118).</text>
+        <rect x="10" y="106" width="108" height="20" rx="4" fill="rgba(59,130,246,0.15)" />
+        <text x="16" y="120" fill="#93c5fd" font-size="9.5" class="mono">(Dashti et al., 2019)</text>
+      </g>
+    </g>
+
+    <!-- ================================================================== -->
+    <!-- PANE 2 (CENTER): DIAGNOSTICS + DAG CANVAS + NOTEBOOK               -->
+    <!-- ================================================================== -->
+    <g transform="translate(300, 50)">
+      <rect width="560" height="608" fill="#0d1320" />
+      <line x1="560" y1="0" x2="560" y2="608" stroke="#26334d" stroke-width="1" />
+
+      <!-- Diagnostics Ribbon -->
+      <rect width="559" height="76" fill="#0f172a" />
+      <line x1="0" y1="76" x2="560" y2="76" stroke="#26334d" stroke-width="1" />
+
+      <rect x="12" y="10" width="206" height="24" rx="12" fill="rgba(16,185,129,0.18)" stroke="rgba(16,185,129,0.45)" />
+      <text x="22" y="26" fill="#34d399" font-size="10.5" font-weight="700">✅ Identifiable (0 Open Backdoors)</text>
+
+      <text x="228" y="25" fill="#cbd5e1" font-size="10.5" font-weight="700">Minimal Set:</text>
+      <rect x="300" y="11" width="245" height="22" rx="5" fill="#1e293b" stroke="#3b82f6" />
+      <text x="310" y="25" fill="#93c5fd" font-size="10" font-weight="600">{ Baseline Stress, Night/Shift Work } ⚡</text>
+
+      <rect x="12" y="42" width="533" height="24" rx="4" fill="rgba(59,130,246,0.12)" />
+      <text x="20" y="58" fill="#bfdbfe" font-size="10">
+        🛡️ <tspan font-weight="700">Collider Guard Active:</tspan> Conditioning on 'Campus Clinic Visit' is blocked to prevent Berkson's bias.
+      </text>
+
+      <!-- Canvas Area -->
+      <g transform="translate(0, 76)">
+        <rect width="559" height="320" fill="#0b101b" />
+        <!-- Wave dividers -->
+        <line x1="140" y1="0" x2="140" y2="320" stroke="rgba(148,163,184,0.12)" stroke-dasharray="4 4" />
+        <line x1="280" y1="0" x2="280" y2="320" stroke="rgba(148,163,184,0.12)" stroke-dasharray="4 4" />
+        <line x1="420" y1="0" x2="420" y2="320" stroke="rgba(148,163,184,0.12)" stroke-dasharray="4 4" />
+
+        <text x="70" y="16" fill="#64748b" font-size="9.5" font-weight="700" text-anchor="middle">t₀: BASELINE / IV</text>
+        <text x="210" y="16" fill="#64748b" font-size="9.5" font-weight="700" text-anchor="middle">t₁: EXPOSURE</text>
+        <text x="350" y="16" fill="#64748b" font-size="9.5" font-weight="700" text-anchor="middle">t₂: MEDIATOR</text>
+        <text x="490" y="16" fill="#64748b" font-size="9.5" font-weight="700" text-anchor="middle">t₃: OUTCOME</text>
+
+        <!-- Arrows -->
+        <path d="M 125 65 L 165 145" stroke="#10b981" stroke-width="2.2" marker-end="url(#mGreen)" />
+        <path d="M 130 55 Q 310 25 460 142" fill="none" stroke="#10b981" stroke-width="2" marker-end="url(#mGreen)" />
+        <path d="M 125 168 L 154 168" stroke="#10b981" stroke-width="2.2" marker-end="url(#mGreen)" />
+        <path d="M 266 168 L 296 168" stroke="#10b981" stroke-width="2.5" marker-end="url(#mGreen)" />
+        <path d="M 404 168 L 434 168" stroke="#10b981" stroke-width="2.5" marker-end="url(#mGreen)" />
+        <path d="M 220 192 L 310 258" stroke="#3b82f6" stroke-width="1.8" class="pulse" marker-end="url(#mBlue)" />
+        <path d="M 480 192 L 395 258" stroke="#3b82f6" stroke-width="1.8" class="pulse" marker-end="url(#mBlue)" />
+
+        <!-- Nodes -->
+        <g transform="translate(16, 34)">
+          <rect width="114" height="44" rx="7" fill="#4c0519" stroke="#f8fafc" stroke-width="2" />
+          <text x="7" y="13" fill="#fda4af" font-size="8" font-weight="700">CONFOUNDER [Z]</text>
+          <text x="57" y="31" fill="#ffffff" font-size="10" font-weight="600" text-anchor="middle">Baseline Stress</text>
+        </g>
+
+        <g transform="translate(16, 146)">
+          <rect width="110" height="44" rx="7" fill="#083344" stroke="#06b6d4" stroke-width="1.8" />
+          <text x="7" y="13" fill="#67e8f9" font-size="8" font-weight="700">INSTRUMENT (IV)</text>
+          <text x="55" y="31" fill="#ffffff" font-size="10" font-weight="600" text-anchor="middle">Circadian PRS</text>
+        </g>
+
+        <g transform="translate(156, 146)">
+          <rect width="110" height="44" rx="7" fill="#064e3b" stroke="#10b981" stroke-width="2.2" />
+          <text x="7" y="13" fill="#6ee7b7" font-size="8" font-weight="700">EXPOSURE • t₁</text>
+          <text x="55" y="31" fill="#ffffff" font-size="10" font-weight="700" text-anchor="middle">Sleep Loss (&lt;6h)</text>
+        </g>
+
+        <g transform="translate(298, 146)">
+          <rect width="106" height="44" rx="7" fill="#451a03" stroke="#f59e0b" stroke-width="1.8" />
+          <text x="7" y="13" fill="#fcd34d" font-size="8" font-weight="700">MEDIATOR • t₂</text>
+          <text x="53" y="31" fill="#ffffff" font-size="10" font-weight="600" text-anchor="middle">Exec Fatigue</text>
+        </g>
+
+        <g transform="translate(436, 146)">
+          <rect width="108" height="44" rx="7" fill="#1e3a8a" stroke="#3b82f6" stroke-width="2.2" />
+          <text x="7" y="13" fill="#93c5fd" font-size="8" font-weight="700">OUTCOME • t₃</text>
+          <text x="54" y="31" fill="#ffffff" font-size="10" font-weight="700" text-anchor="middle">Exam Z-Score</text>
+        </g>
+
+        <g transform="translate(298, 252)">
+          <rect width="106" height="44" rx="7" fill="#3b0764" stroke="#a855f7" stroke-width="1.8" />
+          <text x="7" y="13" fill="#d8b4fe" font-size="8" font-weight="700">COLLIDER • t₃</text>
+          <text x="53" y="31" fill="#ffffff" font-size="10" font-weight="600" text-anchor="middle">Clinic Visit</text>
+        </g>
+      </g>
+
+      <!-- Bottom Split: Living Research Notebook -->
+      <g transform="translate(0, 396)">
+        <rect width="559" height="212" fill="#0e1524" />
+        <line x1="0" y1="0" x2="560" y2="0" stroke="#26334d" stroke-width="1.5" />
+        <rect width="559" height="32" fill="#111a2e" />
+        <text x="12" y="20" fill="#f8fafc" font-size="11.5" font-weight="700">📓 Living Research Notebook &amp; Protocol Synthesis (Split View)</text>
+        <text x="16" y="56" fill="#93c5fd" font-size="12" font-weight="700">## 1. Identification Strategy &amp; Edge Provenance</text>
+        <text x="16" y="78" fill="#e2e8f0" font-size="11">To estimate the total effect of Chronic Sleep Deprivation (X) on Cognitive Performance (Y),</text>
+        <text x="16" y="96" fill="#e2e8f0" font-size="11">we adjust for baseline HPA-axis stress (Kalmbach et al., 2018) and night shift schedules.</text>
+        <text x="16" y="120" fill="#e2e8f0" font-size="11">We explicitly avoid conditioning on Prefrontal Executive Fatigue (Walker et al., 2017) as it</text>
+        <text x="16" y="138" fill="#e2e8f0" font-size="11">mediates the primary pathway X → M → Y (preventing overadjustment bias).</text>
+        <rect x="16" y="156" width="525" height="38" rx="6" fill="#090d16" stroke="#26334d" />
+        <text x="26" y="179" fill="#34d399" font-size="10.5" class="mono">Export ready: DAGitty syntax • R (ggdag) • Python (DoWhy) • LaTeX (TikZ)</text>
+      </g>
+    </g>
+
+    <!-- ================================================================== -->
+    <!-- PANE 3 (RIGHT): SOCRATIC MULTI-AGENT COLLABORATOR                  -->
+    <!-- ================================================================== -->
+    <g transform="translate(860, 50)">
+      <rect width="338" height="608" fill="#111827" />
+      <rect width="338" height="44" fill="#0f1625" />
+      <text x="14" y="20" fill="#f8fafc" font-size="12.5" font-weight="700">🧠 Socratic Research Collaborator</text>
+      <text x="14" y="35" fill="#94a3b8" font-size="10">Modes: Socratic • Devil's Advocate • Lit Scout</text>
+
+      <!-- Persona Switcher -->
+      <g transform="translate(8, 52)">
+        <rect x="0" y="0" width="76" height="24" rx="5" fill="rgba(59,130,246,0.22)" stroke="#3b82f6" />
+        <text x="38" y="16" fill="#93c5fd" font-size="10" font-weight="700" text-anchor="middle">🗣️ Socratic</text>
+
+        <rect x="81" y="0" width="80" height="24" rx="5" fill="#1a2333" stroke="#26334d" />
+        <text x="121" y="16" fill="#94a3b8" font-size="10" font-weight="600" text-anchor="middle">⚖️ Critic #2</text>
+
+        <rect x="166" y="0" width="76" height="24" rx="5" fill="#1a2333" stroke="#26334d" />
+        <text x="204" y="16" fill="#94a3b8" font-size="10" font-weight="600" text-anchor="middle">📚 Lit Scout</text>
+
+        <rect x="247" y="0" width="74" height="24" rx="5" fill="#1a2333" stroke="#26334d" />
+        <text x="284" y="16" fill="#94a3b8" font-size="10" font-weight="600" text-anchor="middle">📝 Methods</text>
+      </g>
+
+      <!-- Pending Proposal Governance Box -->
+      <g transform="translate(10, 86)">
+        <rect width="318" height="132" rx="8" fill="#1c2539" stroke="#a855f7" stroke-width="1.5" />
+        <text x="12" y="20" fill="#e9d5ff" font-size="11" font-weight="700">✨ AI Graph Patch Proposal (Review Required)</text>
+        <text x="12" y="38" fill="#f8fafc" font-size="11" font-weight="600">+ Add Confounder: Baseline Caffeine (t₀)</text>
+        <text x="12" y="56" fill="#cbd5e1" font-size="10">Habitual evening caffeine (t₀) confounds sleep onset,</text>
+        <text x="12" y="70" fill="#cbd5e1" font-size="10">whereas reactive daytime caffeine (t₂) is a mediator.</text>
+        <rect x="12" y="78" width="294" height="20" rx="4" fill="rgba(245,158,11,0.15)" />
+        <text x="18" y="92" fill="#fde68a" font-size="9.5">⚠️ Separate baseline (t₀) from reactive intake (t₂).</text>
+
+        <rect x="148" y="104" width="68" height="20" rx="4" fill="rgba(239,68,68,0.2)" stroke="#ef4444" />
+        <text x="182" y="118" fill="#fca5a5" font-size="9.5" font-weight="700" text-anchor="middle">✕ Reject</text>
+
+        <rect x="224" y="104" width="82" height="20" rx="4" fill="rgba(16,185,129,0.22)" stroke="#10b981" />
+        <text x="265" y="118" fill="#34d399" font-size="9.5" font-weight="700" text-anchor="middle">✅ Accept</text>
+      </g>
+
+      <!-- Chat Messages -->
+      <g transform="translate(10, 230)">
+        <rect x="30" y="0" width="288" height="52" rx="8" fill="rgba(59,130,246,0.18)" stroke="rgba(59,130,246,0.4)" />
+        <text x="42" y="20" fill="#f1f5f9" font-size="10.5">Should we control for students visiting the campus</text>
+        <text x="42" y="36" fill="#f1f5f9" font-size="10.5">health clinic in our regression model?</text>
+
+        <rect x="0" y="64" width="318" height="136" rx="8" fill="#1a2333" stroke="#26334d" />
+        <text x="12" y="84" fill="#34d399" font-size="11" font-weight="700">⚖️ Devil's Advocate / Methodologist:</text>
+        <text x="12" y="104" fill="#e2e8f0" font-size="10.5">Hold on! In your DAG, both Sleep Loss (X) and</text>
+        <text x="12" y="120" fill="#e2e8f0" font-size="10.5">Exam Distress (Y) point into Clinic Visit:</text>
+        <text x="12" y="140" fill="#d8b4fe" font-size="10.5" class="mono">Sleep Loss → Clinic Visit ← Exam Score</text>
+        <text x="12" y="162" fill="#cbd5e1" font-size="10.5">That makes Clinic Visit a <tspan fill="#f87171" font-weight="700">Collider</tspan>. Conditioning</text>
+        <text x="12" y="178" fill="#cbd5e1" font-size="10.5">on it opens a spurious biasing path (Berkson's bias)!</text>
+      </g>
+
+      <!-- Socratic Question Chips -->
+      <g transform="translate(10, 444)">
+        <text x="4" y="12" fill="#94a3b8" font-size="9.5" font-weight="700">CLICKABLE SOCRATIC FOLLOW-UPS:</text>
+        <rect x="0" y="20" width="318" height="32" rx="6" fill="#172238" stroke="rgba(59,130,246,0.35)" />
+        <text x="10" y="40" fill="#93c5fd" font-size="10">💬 How do we test if baseline anxiety (t₀) confounds X and Y?</text>
+
+        <rect x="0" y="58" width="318" height="32" rx="6" fill="#172238" stroke="rgba(59,130,246,0.35)" />
+        <text x="10" y="78" fill="#93c5fd" font-size="10">💬 Find cohort studies testing shift work → sleep loss</text>
+      </g>
+
+      <!-- Composer -->
+      <g transform="translate(10, 548)">
+        <rect width="318" height="48" rx="6" fill="#0d131f" stroke="#26334d" />
+        <text x="12" y="22" fill="#64748b" font-size="10.5">Ask Socratic agent or Reviewer #2...</text>
+        <rect x="252" y="12" width="56" height="24" rx="5" fill="#3b82f6" />
+        <text x="280" y="28" fill="#ffffff" font-size="10" font-weight="700" text-anchor="middle">Send ↵</text>
+      </g>
+    </g>
+  </g>
+</svg>

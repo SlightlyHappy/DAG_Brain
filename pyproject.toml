@@ -1,0 +1,19 @@
+[project]
+name = "dag-brain"
+version = "0.1.0"
+description = "Open-Source, Self-Hostable AI-Assisted Causal Modelling & Research Notebook Studio (DAGitty + NotebookLM)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "pydantic>=2.6.0",
+    "networkx>=3.2.1",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+dag-brain = "backend.main:run"

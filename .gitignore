@@ -1,0 +1,29 @@
+# Environment & Secrets
+.env
+data/runtime_settings.json
+
+# Local SQLite Databases (seed data is auto-created from backend/seed_data.py)
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+
+# Python Virtual Environments & Bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Uploaded datasets, PDFs and local backups
+data/uploads/
+data/backup/
+.pytest_cache/

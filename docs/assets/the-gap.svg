@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 410" width="100%" height="100%">
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1100" height="410" rx="16" fill="#0b0f17" stroke="#26334d" stroke-width="2" />
+
+  <g class="sans">
+    <!-- Title -->
+    <text x="550" y="38" fill="#f8fafc" font-size="20" font-weight="800" text-anchor="middle">
+      Why Existing Tools Leave a Critical Gap in Causal Research
+    </text>
+    <text x="550" y="60" fill="#94a3b8" font-size="13" text-anchor="middle">
+      Researchers are forced to jump between disconnected silos—or trust hallucinated AI arrows.
+    </text>
+
+    <!-- Box 1: Manual DAG Editors -->
+    <g transform="translate(36, 86)">
+      <rect width="318" height="175" rx="12" fill="#131c2e" stroke="#334155" stroke-width="1.5" />
+      <text x="20" y="32" fill="#60a5fa" font-size="15" font-weight="700">1. Manual DAG Editors</text>
+      <text x="20" y="50" fill="#64748b" font-size="11.5" font-weight="600">e.g., DAGitty, Graphviz, yEd</text>
+      <text x="20" y="78" fill="#34d399" font-size="12">✓ Exact d-separation &amp; adjustment math</text>
+      <text x="20" y="100" fill="#34d399" font-size="12">✓ Clear structural role semantics</text>
+      <text x="20" y="126" fill="#f87171" font-size="12">✕ Zero literature search or citation linking</text>
+      <text x="20" y="148" fill="#f87171" font-size="12">✕ Does not challenge omitted confounders</text>
+    </g>
+
+    <!-- Box 2: AI Literature Synthesis -->
+    <g transform="translate(391, 86)">
+      <rect width="318" height="175" rx="12" fill="#131c2e" stroke="#334155" stroke-width="1.5" />
+      <text x="20" y="32" fill="#f59e0b" font-size="15" font-weight="700">2. Literature AI Notebooks</text>
+      <text x="20" y="50" fill="#64748b" font-size="11.5" font-weight="600">e.g., NotebookLM, Elicit, Consensus</text>
+      <text x="20" y="78" fill="#34d399" font-size="12">✓ Grounded in real papers &amp; citations</text>
+      <text x="20" y="100" fill="#34d399" font-size="12">✓ Great for reading &amp; summarizing notes</text>
+      <text x="20" y="126" fill="#f87171" font-size="12">✕ No causal graph state or d-separation</text>
+      <text x="20" y="148" fill="#f87171" font-size="12">✕ Conflates correlation with causation</text>
+    </g>
+
+    <!-- Box 3: One-Shot AI Diagram Generators -->
+    <g transform="translate(746, 86)">
+      <rect width="318" height="175" rx="12" fill="#131c2e" stroke="#334155" stroke-width="1.5" />
+      <text x="20" y="32" fill="#c084fc" font-size="15" font-weight="700">3. Prompt-to-Diagram LLMs</text>
+      <text x="20" y="50" fill="#64748b" font-size="11.5" font-weight="600">e.g., ChatGPT -> Mermaid / DOT</text>
+      <text x="20" y="78" fill="#34d399" font-size="12">✓ Fast initial brainstorming</text>
+      <text x="20" y="102" fill="#f87171" font-size="12">✕ Hallucinates edges &amp; creates cycles</text>
+      <text x="20" y="124" fill="#f87171" font-size="12">✕ No edge-level DOI provenance or audit log</text>
+      <text x="20" y="146" fill="#f87171" font-size="12">✕ Sycophantic—agrees with bad assumptions</text>
+    </g>
+
+    <!-- Connecting Arrows Down to DAG_Brain -->
+    <path d="M 195 262 L 380 296" stroke="#3b82f6" stroke-width="2" stroke-dasharray="5 4" />
+    <path d="M 550 262 L 550 296" stroke="#10b981" stroke-width="2" stroke-dasharray="5 4" />
+    <path d="M 905 262 L 720 296" stroke="#a855f7" stroke-width="2" stroke-dasharray="5 4" />
+
+    <!-- Bottom Unified Solution Box: DAG_Brain -->
+    <g transform="translate(80, 296)">
+      <rect width="940" height="92" rx="14" fill="#0f223d" stroke="#10b981" stroke-width="2.2" />
+      <text x="470" y="28" fill="#34d399" font-size="16.5" font-weight="800" text-anchor="middle">
+        🧠 DAG_Brain (Causal Studio): The Unified Open-Source Research Environment
+      </text>
+      <text x="470" y="52" fill="#e2e8f0" font-size="13" text-anchor="middle">
+        Socratic Multi-Agent Interviewer + Reviewer #2 Critic  •  OpenAlex/Crossref Study-Design Grading  •  Dynamic APA/AMA/BibTeX Citations
+      </text>
+      <text x="470" y="74" fill="#93c5fd" font-size="12.5" font-weight="600" text-anchor="middle">
+        Deterministic Pearlian Math Engine (Backdoor Paths, Minimal Adjustment Sets, Collider Traps &amp; IV Discovery) + Reproducible R / DoWhy / LaTeX Export
+      </text>
+    </g>
+  </g>
+</svg>
