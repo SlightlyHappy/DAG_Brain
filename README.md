@@ -155,7 +155,7 @@ flowchart TB
 ## Quickstart
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/DAG_Brain.git
+git clone https://github.com/SlightlyHappy/DAG_Brain.git
 cd DAG_Brain
 ```
 
