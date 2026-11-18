@@ -239,6 +239,7 @@
     </aside>
 
     <!-- ============================================================ WORKSPACE -->
+    <div class="sash sash-left" id="sashLeft" role="separator" aria-orientation="vertical" aria-label="Resize the sources panel" aria-controls="panelSources" tabindex="0" title="Drag to resize. Double-click to reset."></div>
     <section class="workspace" id="workspace" tabindex="-1" aria-label="Causal graph workspace">
       <div id="diagnosticsBanner" class="ident">
         <div class="ident-row">
@@ -300,6 +301,7 @@
       </div>
 
       <div id="centerWorkspace" class="center-workspace mode-canvas">
+        <div class="sash sash-split" id="sashSplit" role="separator" aria-orientation="vertical" aria-label="Resize the graph and notebook" tabindex="0" title="Drag to resize. Double-click to reset."></div>
         <div id="dagCanvasPanel" class="canvas">
           <svg id="dagSvg" class="dag-svg" viewBox="0 0 900 500" role="img" aria-label="Causal diagram">
             <defs>
@@ -474,6 +476,7 @@
     </section>
 
     <!-- ============================================================ ASSISTANT -->
+    <div class="sash sash-right" id="sashRight" role="separator" aria-orientation="vertical" aria-label="Resize the assistant panel" aria-controls="panelAssistant" tabindex="0" title="Drag to resize. Double-click to reset."></div>
     <aside class="panel panel-assistant" id="panelAssistant" aria-labelledby="assistantTitle">
       <div class="panel-head">
         <h2 class="panel-title" id="assistantTitle">Assistant</h2>
@@ -675,8 +678,8 @@
     <div class="dialog-inner">
       <header class="dialog-head">
         <div>
-          <h2 id="wvTitle">Worldviews</h2>
-          <p class="muted">Save competing versions of the graph, such as stress as a confounder versus a mediator, and compare what each requires you to adjust for.</p>
+          <h2 id="wvTitle">Worldviews, drafts and evaluation</h2>
+          <p class="muted">Keep alternative graphs side by side: your own snapshots, AI drafts and expert reference graphs. None of them changes the study's graph unless you load it.</p>
         </div>
         <button class="icon-btn" type="button" data-close="worldviewsModal" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
       </header>
@@ -688,8 +691,40 @@
           </div>
           <button id="btnSaveWorldview" class="btn btn-primary" type="button"><svg class="i"><use href="#i-branch"/></svg>Save snapshot</button>
         </div>
+        <div class="wv-actions-row">
+          <div class="wv-action-group">
+            <span class="subhead">Draft a whole DAG with AI</span>
+            <div class="row gap-1">
+              <button id="btnDraftQuestion" class="btn btn-secondary btn-sm" type="button" title="Draft from the research question"><svg class="i"><use href="#i-sparkle"/></svg>From the question</button>
+              <button id="btnDraftSources" class="btn btn-secondary btn-sm" type="button" title="Draft from the papers and PDFs in your library"><svg class="i"><use href="#i-file"/></svg>From library sources</button>
+            </div>
+          </div>
+          <details class="wv-action-group" id="refImport">
+            <summary class="subhead">Import an expert reference graph</summary>
+            <div class="field" style="margin-top:8px">
+              <label for="refName">Name</label>
+              <input id="refName" class="input" placeholder="Expert panel DAG, 2025" />
+            </div>
+            <div class="field">
+              <label for="refCode">DAGitty code</label>
+              <textarea id="refCode" class="code" rows="5" style="min-height:110px;margin-top:0" placeholder='dag { "Smoking" [exposure] "Mortality" [outcome] "Smoking" -> "Mortality" }'></textarea>
+            </div>
+            <div class="form-actions"><button id="btnImportRef" class="btn btn-secondary btn-sm" type="button">Import reference</button></div>
+          </details>
+        </div>
         <div id="worldviewsList" class="wv-list"></div>
         <div id="worldviewComparisonBox" class="comparison hidden"></div>
+
+        <section class="eval" aria-labelledby="evalTitle">
+          <h3 id="evalTitle" class="subhead">Evaluate a graph against a reference</h3>
+          <p class="muted">Measures how close a candidate (for example an AI draft) is to a reference (for example an expert graph): which arrows match, and whether it would lead to the same analysis.</p>
+          <div class="field-row align-end">
+            <div class="field grow"><label for="evalCandidate">Candidate</label><select id="evalCandidate" class="select"></select></div>
+            <div class="field grow"><label for="evalReference">Reference</label><select id="evalReference" class="select"></select></div>
+            <button id="btnEvaluate" class="btn btn-primary" type="button">Evaluate</button>
+          </div>
+          <div id="evalOut"></div>
+        </section>
       </div>
     </div>
   </dialog>

@@ -43,6 +43,7 @@ from .schemas import (
     ResearchQuestion,
 )
 from . import data_analysis as da
+from . import dag_eval
 from .net import offline_mode
 from .untrusted import scan
 from .validation import apply_proposal, intake_proposals, reject_proposal, validate_proposal
@@ -64,6 +65,7 @@ from .agents import (
     run_agent_turn,
     run_autonomous_deep_research,
     generate_lab_briefing,
+    draft_dag,
 )
 
 
@@ -342,10 +344,34 @@ async def api_manage_worldviews(request: Request) -> JSONResponse:
 
     data = await request.json()
     action = data.get("action", "create")
+    if action == "delete":
+        wv_id = data.get("worldview_id")
+        if not any(w.id == wv_id for w in proj.worldviews):
+            return _not_found("Worldview")
+        proj.worldviews = [w for w in proj.worldviews if w.id != wv_id]
+        save_project(proj)
+        return JSONResponse(_enrich_project_response(proj))
+    if action == "import_reference":
+        nodes, edges = CausalEngine.parse_dagitty(data.get("dagitty_code", ""))
+        if not nodes:
+            return JSONResponse({"detail": "Could not read any variables from that DAGitty code."}, status_code=400)
+        wv = CompetingWorldview(
+            name=data.get("name") or "Expert reference",
+            description="Imported from DAGitty as a reference graph",
+            kind="reference",
+            nodes=nodes,
+            edges=edges,
+        )
+        proj.worldviews.append(wv)
+        proj.audit_log.insert(0, AuditLogEntry(actor="researcher", action="Imported reference graph",
+                                               details=f"'{wv.name}': {len(nodes)} variables, {len(edges)} arrows"))
+        save_project(proj)
+        return JSONResponse(_enrich_project_response(proj))
     if action == "create":
         wv = CompetingWorldview(
             name=data.get("name") or f"Model Snapshot {len(proj.worldviews) + 1}",
             description=data.get("description") or "",
+            kind="reference" if data.get("kind") == "reference" else "snapshot",
             nodes=proj.nodes,
             edges=proj.edges,
         )
@@ -395,6 +421,77 @@ async def api_manage_worldviews(request: Request) -> JSONResponse:
 
     save_project(proj)
     return JSONResponse(_enrich_project_response(proj))
+
+
+def _graph_dict(nodes, edges) -> Dict[str, Any]:
+    return {
+        "nodes": [{"id": n.id, "label": n.label, "role": n.role, "observed": n.observed} for n in nodes],
+        "edges": [{"source": e.source, "target": e.target, "edge_type": e.edge_type}
+                  for e in edges if e.approved_by_researcher],
+    }
+
+
+async def api_draft_dag(request: Request) -> JSONResponse:
+    """Draft a whole DAG from the question or from sources. Stored as a worldview, never applied."""
+    proj = get_project(request.path_params["project_id"])
+    if not proj:
+        return _not_found()
+    data = await request.json() if request.headers.get("content-length") not in (None, "0") else {}
+    mode = "sources" if data.get("mode") == "sources" else "question"
+    res = await draft_dag(proj, mode=mode, source_ids=data.get("source_ids") or None)
+    label = "from sources" if mode == "sources" else "from the question"
+    wv = CompetingWorldview(
+        name=data.get("name") or f"AI draft {label} ({'model' if res['used_llm'] else 'baseline, no model'})",
+        description=f"Drafted {label}. Every arrow is an AI hypothesis until reviewed.",
+        kind="ai_draft",
+        nodes=res["nodes"],
+        edges=res["edges"],
+        notes=res["notes"],
+        provenance=Provenance.model_validate(res["provenance"]),
+    )
+    proj.worldviews.append(wv)
+    proj.audit_log.insert(0, AuditLogEntry(
+        actor="ai", action="Drafted a DAG (not applied)",
+        details=f"'{wv.name}': {len(wv.nodes)} variables, {len(wv.edges)} arrows; stored as a worldview",
+        provenance=wv.provenance,
+    ))
+    save_project(proj)
+    out = _enrich_project_response(proj)
+    out["draft_id"] = wv.id
+    return JSONResponse(out)
+
+
+async def api_evaluate(request: Request) -> JSONResponse:
+    """Compare a candidate graph with a reference graph, structurally and inferentially."""
+    proj = get_project(request.path_params["project_id"])
+    if not proj:
+        return _not_found()
+    data = await request.json()
+
+    def pick(key: str):
+        ref = data.get(key, "current")
+        if ref == "current":
+            return "Current graph", _graph_dict(proj.nodes, proj.edges)
+        wv = next((w for w in proj.worldviews if w.id == ref), None)
+        return (wv.name, _graph_dict(wv.nodes, wv.edges)) if wv else (None, None)
+
+    c_name, cand = pick("candidate")
+    r_name, ref = pick("reference")
+    if cand is None or ref is None:
+        return _not_found("Graph")
+    if data.get("candidate") == data.get("reference"):
+        return JSONResponse({"detail": "Choose two different graphs."}, status_code=400)
+    res = dag_eval.compare(cand, ref, manual_mapping=data.get("mapping") or None)
+    labels = {**{n["id"]: n["label"] for n in cand["nodes"]}, **{n["id"]: n["label"] for n in ref["nodes"]}}
+    res["candidate_name"], res["reference_name"] = c_name, r_name
+    res["labels"] = labels
+    proj.audit_log.insert(0, AuditLogEntry(
+        actor="researcher", action="Evaluated a graph against a reference",
+        details=f"'{c_name}' vs '{r_name}': skeleton F1 {res['skeleton']['f1']:.2f}, SHD {res['shd']}"
+        + (f", target analysis {'correct' if res['target']['analysis_correct'] else 'wrong'}" if 'target' in res else ""),
+    ))
+    save_project(proj)
+    return JSONResponse(res)
 
 
 async def api_chat_turn(request: Request) -> JSONResponse:
@@ -998,6 +1095,8 @@ routes = [
     Route("/api/projects/{project_id}/lab-briefing", api_generate_lab_briefing, methods=["POST"]),
     Route("/api/projects/{project_id}/export", api_export_project, methods=["GET"]),
     Route("/api/projects/{project_id}/import-dagitty", api_import_dagitty, methods=["POST"]),
+    Route("/api/projects/{project_id}/drafts", api_draft_dag, methods=["POST"]),
+    Route("/api/projects/{project_id}/evaluate", api_evaluate, methods=["POST"]),
     Route("/api/projects/{project_id}/staged/{source_id}/decide", api_decide_staged, methods=["POST"]),
     Route("/api/projects/{project_id}/versions", api_versions, methods=["GET", "POST"]),
     Route("/api/projects/{project_id}/sources/upload", api_upload_pdf, methods=["POST"]),

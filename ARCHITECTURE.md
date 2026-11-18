@@ -13,6 +13,7 @@ Contents:
 7. [Untrusted content and prompt injection](#7-untrusted-content-and-prompt-injection)
 8. [Literature and full text](#8-literature-and-full-text)
 9. [Network boundary and local-only mode](#9-network-boundary-and-local-only-mode)
+   - [AI drafts and their evaluation](#9a-ai-drafts-and-their-evaluation)
 10. [Verification](#10-verification)
 11. [Limitations](#11-limitations)
 12. [References](#12-references)
@@ -243,6 +244,34 @@ Every outbound HTTP request from the backend goes through `backend/net.py`. When
 
 This is local-only operation of the application. An air-gapped deployment additionally needs the host's network, operating system, browser and package sources to be controlled. See the README.
 
+## 9a. AI drafts and their evaluation
+
+**Drafting** (`agents.draft_dag`). The model drafts a whole DAG from the research question (text-to-DAG) or from library sources and uploaded PDFs (PDF-to-DAG). Sources flagged for injection are left out, and documents are passed as untrusted blocks. `sanitize_draft` turns the output into a valid DAG and records each repair as a note:
+- unknown variables and self-loops are dropped;
+- arrows that would close a cycle are dropped;
+- a second exposure or outcome is relabelled;
+- citations that do not resolve are removed.
+
+The draft is stored as a worldview of kind `ai_draft`, with provenance. It never touches the study's graph; loading it is an explicit researcher action, versioned and undoable. With no model available, a baseline draft (exposure → outcome) is stored and labelled as such.
+
+**References.** An expert graph is imported as DAGitty code into a worldview of kind `reference`, or a snapshot is marked as one.
+
+**Evaluation** (`backend/dag_eval.py`). It compares a candidate graph with a reference graph.
+
+Variables are matched by normalised id or label, then by string similarity (threshold 0.82), with an optional manual mapping. Reference variables the candidate lacks are added to it as isolated variables. Candidate variables the reference lacks are kept as unobserved, so paths through them still count.
+
+| Metric | Definition |
+|:--|:--|
+| Skeleton precision, recall, F1 | Over adjacencies, ignoring direction; bidirected edges count as adjacencies |
+| Oriented-edge precision, recall, F1 | Direction (or bidirected type) must match |
+| Structural Hamming distance | Missing adjacencies + extra adjacencies + shared adjacencies with a different orientation |
+| Adjustment identification distance (parent and ancestor) | Share of ordered pairs (x, y) of observed reference variables for which the strategy read off the candidate is wrong in the reference: claim of no effect when y is not a descendant of x, else an adjustment set (the parents of x, or the canonical ancestor set), else "not identifiable". Correctness is judged with the complete adjustment criterion in the reference (Henckel, Würtzen & Weichwald 2024). |
+| Target analysis correct | For the reference exposure and outcome: the candidate's first minimal adjustment set is valid in the reference, or both graphs agree that adjustment cannot identify the effect |
+
+The ancestor version of the AID adjusts for every ancestor and can be lenient: it may pick up a confounder by chance that the candidate's minimal set omits. That is why the target-level verdict, which uses the set the app would actually recommend, is reported alongside it.
+
+**Benchmark** (`scripts/benchmark_extraction.py`). Each case in `benchmarks/cases/` supplies a question, the exposure and outcome names, and a reference graph with its source. The drafter sees only the question and the two names. Results, the model used and the date go to `docs/BENCHMARK.md`.
+
 ## 10. Verification
 
 - `tests/` (pytest):
@@ -255,6 +284,8 @@ This is local-only operation of the application. An air-gapped deployment additi
   - schema migration;
   - the offline guard.
 - `scripts/validation_report.py`: the full study behind [docs/VALIDATION.md](docs/VALIDATION.md), with a fixed seed.
+- `tests/test_dag_eval.py` and `tests/test_drafting.py`: evaluation metrics on cases with known answers, draft sanitising, injection exclusion, and the draft-then-evaluate API flow.
+- `scripts/benchmark_extraction.py`: the AI-drafting benchmark behind [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## 11. Limitations
 
@@ -268,6 +299,8 @@ This is local-only operation of the application. An air-gapped deployment additi
 ## 12. References
 
 - Brito, C. & Pearl, J. (2002). Generalized instrumental variables. *UAI*.
+- Henckel, L., Würtzen, T. & Weichwald, S. (2024). Adjustment identification distance: a gadjid for causal structure learning. arXiv:2402.08616.
+- Hernández-Díaz, S., Schisterman, E. F. & Hernán, M. A. (2006). The birth weight "paradox" uncovered? *American Journal of Epidemiology* 164(11).
 - Chernozhukov, V. et al. (2018). Double/debiased machine learning for treatment and structural parameters. *The Econometrics Journal* 21(1).
 - Greenland, S., Pearl, J. & Robins, J. M. (1999). Causal diagrams for epidemiologic research. *Epidemiology* 10(1).
 - Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics* 6(2).

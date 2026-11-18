@@ -215,11 +215,16 @@ class GraphPatchProposal(BaseModel):
 
 
 class CompetingWorldview(BaseModel):
+    """A saved alternative graph: a researcher snapshot, an AI draft, or an expert reference."""
+
     id: str = Field(default_factory=lambda: gen_id("wv"))
     name: str
     description: str = ""
+    kind: Literal["snapshot", "ai_draft", "reference"] = "snapshot"
     nodes: List[CausalNode] = Field(default_factory=list)
     edges: List[CausalEdge] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+    provenance: Optional["Provenance"] = None
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -322,3 +327,6 @@ class ProjectState(BaseModel):
         if len(self.versions) > MAX_VERSIONS:
             self.versions = self.versions[-MAX_VERSIONS:]
         return self.graph_version
+
+
+CompetingWorldview.model_rebuild()

@@ -799,3 +799,147 @@ def _run_deterministic_copilot(
         "agent_mode": agent_mode,
         "used_llm": False,
     }
+
+
+# ============================================================================
+# DRAFTING A WHOLE DAG (text-to-DAG and PDF-to-DAG)
+# Drafts are stored as separate worldviews: they never change the study's graph.
+# ============================================================================
+
+DRAFT_SYSTEM_PROMPT = """You draft a candidate causal directed acyclic graph (DAG) for a researcher to review.
+The draft will be compared with expert graphs, so be specific and conservative.
+
+Rules:
+- Exactly one exposure and one outcome.
+- Include the common causes of exposure and outcome you believe matter, important mediators, and known colliders such as selection variables.
+- Represent an unmeasured common cause either as a variable with role "latent" or as a "bidirected" arrow between the two variables it affects.
+- Every arrow must respect time order: time_index 0 (baseline) to 3 (outcome).
+- No cycles. Use ids in snake_case.
+- In "basis", say briefly why the arrow is there. If it comes from a provided document, list that document's id in "source_ids". Never invent citations.
+
+Return ONLY JSON:
+{"variables": [{"id": "snake_case", "label": "Readable name", "role": "exposure|outcome|confounder|mediator|collider|instrument|latent|other", "time_index": 0}],
+ "arrows": [{"source": "id", "target": "id", "type": "directed|bidirected", "basis": "why", "source_ids": []}]}
+
+""" + GUARD
+
+_ROLES = {"exposure", "outcome", "confounder", "mediator", "collider", "instrument", "effect_modifier", "competing_exposure", "latent", "other"}
+
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:60] or "var"
+
+
+def sanitize_draft(raw: Dict[str, Any], known_source_ids: set) -> Dict[str, Any]:
+    """Turn model output into a valid DAG, recording everything that was dropped."""
+    import networkx as _nx
+
+    notes: List[str] = []
+    nodes: Dict[str, CausalNode] = {}
+    for v in (raw.get("variables") or [])[:40]:
+        if not isinstance(v, dict):
+            continue
+        nid = _slug(str(v.get("id") or v.get("label") or ""))
+        if nid in nodes:
+            continue
+        role = v.get("role") if v.get("role") in _ROLES else "other"
+        try:
+            t = max(0, min(3, int(v.get("time_index", 1))))
+        except (TypeError, ValueError):
+            t = 1
+        nodes[nid] = CausalNode(id=nid, label=str(v.get("label") or nid)[:120], role=role, time_index=t,
+                                observed=role != "latent")
+    for role in ("exposure", "outcome"):
+        ids = [n.id for n in nodes.values() if n.role == role]
+        for extra in ids[1:]:
+            nodes[extra].role = "other"
+            notes.append(f"More than one {role}: kept '{nodes[ids[0]].label}', relabelled '{nodes[extra].label}'.")
+
+    G = _nx.DiGraph()
+    G.add_nodes_from(nodes)
+    edges: List[CausalEdge] = []
+    seen = set()
+    for a in (raw.get("arrows") or [])[:120]:
+        if not isinstance(a, dict):
+            continue
+        s, t = _slug(str(a.get("source", ""))), _slug(str(a.get("target", "")))
+        if s not in nodes or t not in nodes or s == t:
+            notes.append(f"Dropped arrow {s} -> {t}: unknown variable or self-loop.")
+            continue
+        bi = a.get("type") == "bidirected"
+        key = (frozenset((s, t)), "b") if bi else (s, t)
+        if key in seen:
+            continue
+        if not bi:
+            G.add_edge(s, t)
+            if not _nx.is_directed_acyclic_graph(G):
+                G.remove_edge(s, t)
+                notes.append(f"Dropped arrow {nodes[s].label} -> {nodes[t].label}: it would create a cycle.")
+                continue
+        seen.add(key)
+        cites = [str(c) for c in (a.get("source_ids") or []) if str(c) in known_source_ids]
+        edges.append(CausalEdge(
+            source=s, target=t, edge_type="bidirected" if bi else "directed",
+            evidence_class="ai_hypothesis", origin="ai", citation_ids=cites,
+            rationale=str(a.get("basis", ""))[:500], approved_by_researcher=True,
+        ))
+    # Lay variables out by time wave so the draft is readable on the canvas.
+    lanes: Dict[int, List[CausalNode]] = {}
+    for n in nodes.values():
+        lanes.setdefault(n.time_index, []).append(n)
+    for t, ns in lanes.items():
+        for i, n in enumerate(ns):
+            n.x = 112.5 + 225 * t
+            n.y = 260 - (len(ns) - 1) * 49 + i * 98
+    return {"nodes": list(nodes.values()), "edges": edges, "notes": notes}
+
+
+def _baseline_draft(project: ProjectState) -> Dict[str, Any]:
+    """Deterministic fallback when no model is available: exposure -> outcome only."""
+    q = project.question
+    x = next((n for n in project.nodes if n.role == "exposure"), None)
+    y = next((n for n in project.nodes if n.role == "outcome"), None)
+    raw = {
+        "variables": [
+            {"id": (x.id if x else _slug(q.exposure or "exposure")), "label": (x.label if x else q.exposure or "Exposure"), "role": "exposure", "time_index": 1},
+            {"id": (y.id if y else _slug(q.outcome or "outcome")), "label": (y.label if y else q.outcome or "Outcome"), "role": "outcome", "time_index": 3},
+        ],
+        "arrows": [],
+    }
+    raw["arrows"].append({"source": raw["variables"][0]["id"], "target": raw["variables"][1]["id"], "basis": "Baseline draft without a language model."})
+    return raw
+
+
+async def draft_dag(project: ProjectState, mode: str = "question", source_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Draft a full candidate DAG from the research question or from library sources."""
+    q = project.question
+    question_text = "\n".join(filter(None, [
+        f"Study: {project.title} ({project.discipline})",
+        f"Research question: {project.research_question}" if project.research_question else "",
+        f"Units: {q.unit}" if q.unit else "",
+        f"Exposure: {q.exposure}" if q.exposure else "",
+        f"Comparator: {q.comparator}" if q.comparator else "",
+        f"Outcome: {q.outcome}" if q.outcome else "",
+        f"Time horizon: {q.time_horizon}" if q.time_horizon else "",
+    ]))
+    docs: List[str] = []
+    used_ids: List[str] = []
+    if mode == "sources":
+        chosen = [s for s in project.sources if (not source_ids or s.id in source_ids)]
+        for s in chosen[:8]:
+            if s.injection_flags:
+                continue
+            body = f"{s.title} ({s.year}; {s.study_design})\n{s.abstract or ''}\n{(s.full_text_snippet or '')[:3000]}"
+            docs.append(wrap(s.id, "paper", body, 4000))
+            used_ids.append(s.id)
+    user_prompt = question_text + ("\n\nDOCUMENTS:\n" + "\n".join(docs) if docs else "")
+    raw = await call_llm_json(system_prompt=DRAFT_SYSTEM_PROMPT, user_prompt=user_prompt)
+    used_llm = bool(raw and isinstance(raw, dict) and raw.get("variables"))
+    if not used_llm:
+        raw = _baseline_draft(project)
+    result = sanitize_draft(raw, set(used_ids))
+    if not any(n.role == "exposure" for n in result["nodes"]) or not any(n.role == "outcome" for n in result["nodes"]):
+        result["notes"].append("The draft has no exposure or no outcome; identification cannot be compared on the target effect.")
+    result["used_llm"] = used_llm
+    result["provenance"] = _provenance("draft_" + mode, DRAFT_SYSTEM_PROMPT, user_prompt, used_llm, used_ids)
+    return result

@@ -1347,3 +1347,75 @@ body.view-not-canvas #canvasTools { visibility: hidden; }
 
 .src-actions { flex-wrap: wrap; justify-content: flex-end; }
 .panel-sources { overflow-x: hidden; }
+
+/* =========================================================================
+   Resizable panes (VS Code-style sashes)
+   ========================================================================= */
+.shell { position: relative; }
+.sash {
+  position: absolute; top: 0; bottom: 0; z-index: 25;
+  width: 8px; margin-left: -4px;
+  cursor: col-resize; touch-action: none;
+  outline: none;
+}
+.sash::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px;
+  background: transparent; transition: background-color 120ms ease-out 0ms;
+}
+.sash:hover::after { background: var(--accent); transition-delay: 300ms; }
+.sash:focus-visible::after, .sash.is-active::after { background: var(--accent); transition-delay: 0ms; }
+.sash-left { left: var(--left-w); }
+.sash-right { left: calc(100% - var(--right-w)); }
+body[data-left="closed"] .sash-left { left: 0; margin-left: 0; }
+body[data-right="closed"] .sash-right { left: 100%; margin-left: -8px; }
+body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-select: none !important; }
+body.is-resizing .shell, body.is-resizing .center-workspace { transition: none !important; }
+body.is-resizing iframe, body.is-resizing svg { pointer-events: none; }
+
+/* graph | notebook split */
+.center-workspace { position: relative; }
+.sash-split { display: none; left: var(--split, 55%); }
+.center-workspace.mode-split .sash-split { display: block; }
+.center-workspace.mode-split { grid-template-columns: minmax(240px, var(--split, 55%)) minmax(280px, 1fr); }
+
+@media (max-width: 1080px) {
+  .center-workspace.mode-split .sash-split { display: none; }
+}
+@media (max-width: 760px) {
+  .sash { display: none !important; }
+}
+
+/* =========================================================================
+   Worldviews, drafts and evaluation
+   ========================================================================= */
+.wv-actions-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.wv-action-group { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 10px 12px; background: var(--surface-2); }
+.wv-action-group .subhead { margin-bottom: 8px; }
+details.wv-action-group summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+details.wv-action-group summary::-webkit-details-marker { display: none; }
+details.wv-action-group[open] summary { margin-bottom: 4px; }
+.wv-kind { margin-left: 6px; }
+.wv-notes { font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; }
+
+.eval { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.eval > .muted { margin: 4px 0 12px; max-width: 72ch; }
+.eval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+.metric { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 10px 12px; }
+.metric-label { font-size: var(--fs-xs); color: var(--text-2); font-weight: 500; }
+.metric-value { font-size: var(--fs-xl); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.metric-sub { font-size: var(--fs-xs); color: var(--text-3); }
+.eval-verdict { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-lg); }
+.eval-verdict.is-ok { background: var(--ok-soft); }
+.eval-verdict.is-bad { background: var(--bad-soft); }
+.eval-verdict .i { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.eval-verdict.is-ok .i { color: var(--ok); }
+.eval-verdict.is-bad .i { color: var(--bad); }
+.eval-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 14px; }
+.eval-cols h4 { margin-bottom: 4px; }
+.eval-cols ul { margin: 0; padding-left: 1.1em; font-size: var(--fs-sm); color: var(--text-2); }
+.eval-cols li + li { margin-top: 2px; }
+@media (max-width: 760px) { .wv-actions-row { grid-template-columns: 1fr; } }
+
+@media (max-width: 1080px) {
+  .center-workspace.mode-split { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+}

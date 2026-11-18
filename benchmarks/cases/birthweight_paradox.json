@@ -1,0 +1,24 @@
+{
+  "id": "birthweight_paradox",
+  "title": "Maternal smoking, birth weight and infant mortality",
+  "discipline": "Epidemiology & Public Health",
+  "question": "What is the total causal effect of maternal smoking during pregnancy on infant mortality, and should the analysis condition on birth weight?",
+  "exposure": "Maternal smoking during pregnancy",
+  "outcome": "Infant mortality",
+  "source": "Hernández-Díaz S, Schisterman EF, Hernán MA. The birth weight \"paradox\" uncovered? Am J Epidemiol. 2006;164(11):1115-20. Structure as drawn in the paper's causal diagram: an unmeasured cause of low birth weight (such as birth defects) also affects mortality.",
+  "reference": {
+    "nodes": [
+      {"id": "smoking", "label": "Maternal smoking during pregnancy", "role": "exposure"},
+      {"id": "low_birth_weight", "label": "Low birth weight", "role": "mediator"},
+      {"id": "birth_defects", "label": "Birth defects (unmeasured)", "role": "latent", "observed": false},
+      {"id": "infant_mortality", "label": "Infant mortality", "role": "outcome"}
+    ],
+    "edges": [
+      {"source": "smoking", "target": "low_birth_weight"},
+      {"source": "smoking", "target": "infant_mortality"},
+      {"source": "low_birth_weight", "target": "infant_mortality"},
+      {"source": "birth_defects", "target": "low_birth_weight"},
+      {"source": "birth_defects", "target": "infant_mortality"}
+    ]
+  }
+}

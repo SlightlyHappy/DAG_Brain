@@ -319,6 +319,7 @@ function reportError(prefix, err) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   initPanels();
+  initSashes();
   bindUIEvents();
   setPersona("socratic");
   loadHealth();
@@ -2688,6 +2689,11 @@ function bindUIEvents() {
   };
 
   // Worldviews
+  $("btnDraftQuestion").onclick = () => draftWithAI("question");
+  $("btnDraftSources").onclick = () => draftWithAI("sources");
+  $("btnImportRef").onclick = importReference;
+  $("btnEvaluate").onclick = runEvaluation;
+
   $("btnWorldviews").onclick = () => {
     renderWorldviewsModal();
     openDialog("worldviewsModal");
@@ -2851,25 +2857,53 @@ function renderWorldviewsModal() {
   const compBox = $("worldviewComparisonBox");
   compBox.classList.add("hidden");
   const wvs = proj.worldviews || [];
+  populateEvalSelects();
   if (!wvs.length) {
-    list.innerHTML = `<div class="empty"><p class="empty-body">No snapshots yet. Save the current graph above, change an assumption, then compare the two.</p></div>`;
+    list.innerHTML = `<div class="empty"><p class="empty-body">Nothing saved yet. Save a snapshot, draft a DAG with AI, or import an expert reference graph.</p></div>`;
     return;
   }
+  const KIND = { snapshot: ["Snapshot", ""], ai_draft: ["AI draft", "pill-warn"], reference: ["Expert reference", "pill-ok"] };
   list.innerHTML = wvs
-    .map(
-      (wv) => `
+    .map((wv) => {
+      const [kindLabel, kindCls] = KIND[wv.kind] || KIND.snapshot;
+      const prov = wv.provenance ? `, ${wv.provenance.used_llm ? escapeHtml(wv.provenance.model || "model") : "no model (baseline)"}` : "";
+      return `
       <div class="wv-row" data-id="${escapeHtml(wv.id)}">
         <div>
-          <div class="wv-name">${escapeHtml(wv.name)}</div>
-          <div class="wv-meta">${(wv.nodes || []).length} variables, ${(wv.edges || []).length} arrows${wv.created_at ? `, saved ${escapeHtml(fmtDay(wv.created_at))} ${escapeHtml(fmtTime(wv.created_at))}` : ""}</div>
+          <div class="wv-name">${escapeHtml(wv.name)}<span class="pill ${kindCls} wv-kind">${kindLabel}</span></div>
+          <div class="wv-meta">${(wv.nodes || []).length} variables, ${(wv.edges || []).length} arrows${prov}${wv.created_at ? `, ${escapeHtml(fmtDay(wv.created_at))} ${escapeHtml(fmtTime(wv.created_at))}` : ""}</div>
+          ${(wv.notes || []).length ? `<div class="wv-notes" title="${escapeHtml(wv.notes.join("\n"))}">${wv.notes.length} cleanup note${wv.notes.length > 1 ? "s" : ""}: ${escapeHtml(wv.notes[0])}</div>` : ""}
         </div>
         <div class="wv-actions">
-          <button class="btn btn-ghost btn-sm btn-wv-compare" data-id="${escapeHtml(wv.id)}" type="button">Compare</button>
-          <button class="btn btn-secondary btn-sm btn-wv-restore" data-id="${escapeHtml(wv.id)}" type="button">Load</button>
+          <button class="btn btn-ghost btn-sm btn-wv-eval" data-id="${escapeHtml(wv.id)}" type="button" title="Evaluate against a reference">Evaluate</button>
+          <button class="btn btn-ghost btn-sm btn-wv-compare" data-id="${escapeHtml(wv.id)}" type="button" title="Compare adjustment sets with the current graph">Compare</button>
+          <button class="btn btn-secondary btn-sm btn-wv-restore" data-id="${escapeHtml(wv.id)}" type="button" title="Replace the study's graph with this one (undo available)">Load</button>
+          <button class="icon-btn icon-btn-sm btn-wv-delete" data-id="${escapeHtml(wv.id)}" type="button" aria-label="Delete ${escapeHtml(wv.name)}">${icon("trash")}</button>
         </div>
-      </div>`
-    )
+      </div>`;
+    })
     .join("");
+
+  list.querySelectorAll(".btn-wv-delete").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const wv = wvs.find((w) => w.id === btn.dataset.id);
+      try {
+        const updated = await api(`/api/projects/${proj.id}/worldviews`, { method: "POST", body: JSON.stringify({ action: "delete", worldview_id: btn.dataset.id }) });
+        setProjectState(updated);
+        renderWorldviewsModal();
+        toast(`Deleted “${wv ? wv.name : "worldview"}”`);
+      } catch (err) { reportError("Not deleted", err); }
+    });
+  });
+  list.querySelectorAll(".btn-wv-eval").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const wv = wvs.find((w) => w.id === btn.dataset.id);
+      const ref = wvs.find((w) => w.kind === "reference" && w.id !== btn.dataset.id);
+      $("evalCandidate").value = btn.dataset.id;
+      $("evalReference").value = wv && wv.kind === "reference" ? "current" : (ref ? ref.id : "current");
+      runEvaluation();
+    });
+  });
 
   list.querySelectorAll(".btn-wv-restore").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -3174,4 +3208,249 @@ async function saveQuestion() {
     setProjectState(updated);
     toast("Question saved");
   } catch (err) { reportError("Question not saved", err); }
+}
+
+
+// ============================================================================
+// DRAFTS, REFERENCES AND EVALUATION
+// ============================================================================
+
+function populateEvalSelects() {
+  const proj = state.currentProject;
+  if (!proj) return;
+  const wvs = proj.worldviews || [];
+  const opts = [`<option value="current">Current graph</option>`]
+    .concat(wvs.map((w) => `<option value="${escapeHtml(w.id)}">${escapeHtml(w.name)}${w.kind === "ai_draft" ? " (AI draft)" : w.kind === "reference" ? " (reference)" : ""}</option>`))
+    .join("");
+  const cand = $("evalCandidate");
+  const ref = $("evalReference");
+  const prevC = cand.value;
+  const prevR = ref.value;
+  cand.innerHTML = opts;
+  ref.innerHTML = opts;
+  const latestDraft = [...wvs].reverse().find((w) => w.kind === "ai_draft");
+  const latestRef = [...wvs].reverse().find((w) => w.kind === "reference");
+  cand.value = prevC && [...cand.options].some((o) => o.value === prevC) ? prevC : (latestDraft ? latestDraft.id : "current");
+  ref.value = prevR && [...ref.options].some((o) => o.value === prevR) ? prevR : (latestRef ? latestRef.id : "current");
+  if (cand.value === ref.value) ref.value = cand.value === "current" ? (wvs[0] ? wvs[0].id : "current") : "current";
+}
+
+function pct(x) {
+  return x === null || x === undefined ? "–" : `${Math.round(x * 100)}%`;
+}
+
+function evalHtml(r) {
+  const L = (id) => escapeHtml((r.labels || {})[id] || String(id).replace(/^extra::/, ""));
+  const edgeL = (s) => s.split(/ -> | - /).map(L).join(s.includes("->") ? " → " : " – ");
+  const setL = (s) => `{${(s || []).map(L).join(", ") || "∅"}}`;
+  const t = r.target;
+  let verdict;
+  if (!t) {
+    verdict = `<div class="eval-verdict">${icon("info")}<div class="muted">The reference has no exposure and outcome marked, so only structural metrics are shown.</div></div>`;
+  } else if (t.analysis_correct) {
+    verdict = `<div class="eval-verdict is-ok">${icon("circle-check")}<div><strong>Leads to a valid analysis of ${L(t.exposure)} → ${L(t.outcome)}.</strong><div class="muted">${
+      t.candidate_identifiable ? `Its first adjustment set ${setL(t.candidate_sets[0])} is also valid in the reference.` : "Both graphs agree that adjustment cannot identify this effect."
+    }</div></div></div>`;
+  } else {
+    let why;
+    if (!t.candidate_identifiable) why = "The candidate says the effect cannot be identified by adjustment, but the reference says it can.";
+    else if (!t.reference_identifiable) why = "The candidate suggests adjusting, but in the reference no adjustment set exists (unmeasured confounding).";
+    else why = `Its recommended set ${setL(t.candidate_sets[0])} is not valid in the reference. Valid there: ${t.reference_sets.map(setL).join(" or ")}.`;
+    verdict = `<div class="eval-verdict is-bad">${icon("octagon")}<div><strong>Would lead to a biased analysis of ${L(t.exposure)} → ${L(t.outcome)}.</strong><div class="muted">${why}</div></div></div>`;
+  }
+  const list = (title, items, fmt = (x) => x) =>
+    `<div><h4 class="subhead">${title} <span class="count">${items.length}</span></h4>${
+      items.length ? `<ul>${items.slice(0, 12).map((x) => `<li>${fmt(x)}</li>`).join("")}${items.length > 12 ? `<li>and ${items.length - 12} more</li>` : ""}</ul>` : `<div class="muted">None</div>`
+    }</div>`;
+  return `
+    <p class="muted" style="margin-top:12px">${escapeHtml(r.candidate_name)} against ${escapeHtml(r.reference_name)}. ${r.nodes.matched} of ${r.nodes.reference} reference variables matched by name.${r.is_dag ? "" : " The candidate contains a cycle, so inferential metrics are not computed."}</p>
+    ${verdict}
+    <div class="eval-grid">
+      <div class="metric"><div class="metric-label">Skeleton F1</div><div class="metric-value">${pct(r.skeleton.f1)}</div><div class="metric-sub">precision ${pct(r.skeleton.precision)}, recall ${pct(r.skeleton.recall)}</div></div>
+      <div class="metric"><div class="metric-label">Oriented-edge F1</div><div class="metric-value">${pct(r.oriented.f1)}</div><div class="metric-sub">direction must match</div></div>
+      <div class="metric"><div class="metric-label">Structural Hamming distance</div><div class="metric-value">${r.shd}</div><div class="metric-sub">arrows to add, delete or reverse</div></div>
+      ${r.aid_ancestor ? `<div class="metric"><div class="metric-label">Adjustment identification distance</div><div class="metric-value">${pct(r.aid_ancestor.distance)}</div><div class="metric-sub">of ${r.aid_ancestor.pairs} variable pairs would be analysed wrongly (parent version ${pct(r.aid_parent.distance)})</div></div>` : ""}
+    </div>
+    <div class="eval-cols">
+      ${list("Missing arrows", r.edges.missing, edgeL)}
+      ${list("Extra arrows", r.edges.extra, edgeL)}
+      ${list("Reversed arrows", r.edges.reversed, edgeL)}
+      ${list("Unmatched variables", [...r.nodes.missing.map((m) => `${L(m)} (missing)`), ...r.nodes.extra.map((m) => `${L(m)} (extra)`)])}
+    </div>`;
+}
+
+async function runEvaluation() {
+  const proj = state.currentProject;
+  if (!proj) return;
+  const candidate = $("evalCandidate").value;
+  const reference = $("evalReference").value;
+  if (candidate === reference) {
+    toast("Choose two different graphs to compare", { error: true });
+    return;
+  }
+  const btn = $("btnEvaluate");
+  setLoading(btn, true);
+  try {
+    const r = await api(`/api/projects/${proj.id}/evaluate`, { method: "POST", body: JSON.stringify({ candidate, reference }) });
+    $("evalOut").innerHTML = evalHtml(r);
+    $("evalOut").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  } catch (err) {
+    reportError("Evaluation failed", err);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+async function draftWithAI(mode) {
+  const proj = state.currentProject;
+  if (!proj) return;
+  if (mode === "sources" && !(proj.sources || []).length) {
+    toast("Add papers or PDFs to the library first", { error: true });
+    return;
+  }
+  const btn = $(mode === "sources" ? "btnDraftSources" : "btnDraftQuestion");
+  setLoading(btn, true);
+  try {
+    const updated = await api(`/api/projects/${proj.id}/drafts`, { method: "POST", body: JSON.stringify({ mode }) });
+    setProjectState(updated);
+    renderWorldviewsModal();
+    const d = (updated.worldviews || []).find((w) => w.id === updated.draft_id);
+    toast(
+      d && d.provenance && d.provenance.used_llm
+        ? `Draft ready: ${d.nodes.length} variables, ${d.edges.length} arrows. Your graph is unchanged.`
+        : "No model configured, so a baseline draft (exposure → outcome) was saved. Configure a provider for a real draft."
+    );
+  } catch (err) {
+    reportError("Draft failed", err);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+async function importReference() {
+  const proj = state.currentProject;
+  const code = $("refCode").value.trim();
+  if (!proj || !code) {
+    toast("Paste the reference graph as DAGitty code", { error: true });
+    return;
+  }
+  try {
+    const updated = await api(`/api/projects/${proj.id}/worldviews`, {
+      method: "POST",
+      body: JSON.stringify({ action: "import_reference", name: $("refName").value.trim() || "Expert reference", dagitty_code: code }),
+    });
+    setProjectState(updated);
+    $("refCode").value = "";
+    $("refName").value = "";
+    $("refImport").open = false;
+    renderWorldviewsModal();
+    toast("Reference graph imported");
+  } catch (err) {
+    reportError("Import failed", err);
+  }
+}
+
+// ============================================================================
+// RESIZABLE PANES (VS Code-style sashes)
+// ============================================================================
+
+const PANE = {
+  left: { min: 220, max: 640, def: 320, varName: "--left-w", key: "dagbrain.leftw" },
+  right: { min: 280, max: 720, def: 384, varName: "--right-w", key: "dagbrain.rightw" },
+};
+
+function setPaneWidth(side, px) {
+  const cfg = PANE[side];
+  const w = Math.round(Math.min(cfg.max, Math.max(cfg.min, px)));
+  document.documentElement.style.setProperty(cfg.varName, `${w}px`);
+  store(cfg.key, String(w));
+  return w;
+}
+
+function currentPaneWidth(side) {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(PANE[side].varName)) || PANE[side].def;
+}
+
+function initSashes() {
+  for (const side of ["left", "right"]) {
+    const saved = Number(store(PANE[side].key));
+    if (saved) setPaneWidth(side, saved);
+  }
+  const ws = $("centerWorkspace");
+  const savedSplit = Number(store("dagbrain.split"));
+  if (savedSplit) ws.style.setProperty("--split", `${savedSplit}%`);
+  const shell = document.querySelector(".shell");
+
+  const bind = (el, onMove, onReset, onKey) => {
+    el.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      el.setPointerCapture(ev.pointerId);
+      el.classList.add("is-active");
+      document.body.classList.add("is-resizing");
+      const up = () => {
+        el.classList.remove("is-active");
+        document.body.classList.remove("is-resizing");
+        el.removeEventListener("pointermove", onMove);
+        el.removeEventListener("pointerup", up);
+        el.removeEventListener("pointercancel", up);
+        applyView();
+      };
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    });
+    el.addEventListener("dblclick", () => {
+      onReset();
+      applyView();
+    });
+    el.addEventListener("keydown", (ev) => {
+      const step = ev.shiftKey ? 64 : 16;
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+        ev.preventDefault();
+        onKey(ev.key === "ArrowRight" ? step : -step);
+        applyView();
+      } else if (ev.key === "Enter") {
+        onReset();
+        applyView();
+      }
+    });
+  };
+
+  // Dragging below half the minimum width collapses the panel; dragging back out reopens it.
+  const sideDrag = (side) => (e) => {
+    const rect = shell.getBoundingClientRect();
+    const w = side === "left" ? e.clientX - rect.left : rect.right - e.clientX;
+    if (w < PANE[side].min / 2) {
+      if (document.body.dataset[side] !== "closed") setPanel(side, "closed");
+      return;
+    }
+    if (document.body.dataset[side] === "closed") setPanel(side, "open");
+    setPaneWidth(side, w);
+  };
+  const sideKey = (side) => (delta) => {
+    if (document.body.dataset[side] === "closed") setPanel(side, "open");
+    setPaneWidth(side, currentPaneWidth(side) + (side === "left" ? delta : -delta));
+  };
+  const sideReset = (side) => () => {
+    if (document.body.dataset[side] === "closed") setPanel(side, "open");
+    setPaneWidth(side, PANE[side].def);
+  };
+  bind($("sashLeft"), sideDrag("left"), sideReset("left"), sideKey("left"));
+  bind($("sashRight"), sideDrag("right"), sideReset("right"), sideKey("right"));
+
+  const setSplit = (p) => {
+    const v = Math.min(80, Math.max(20, p));
+    ws.style.setProperty("--split", `${v}%`);
+    store("dagbrain.split", String(v));
+  };
+  bind(
+    $("sashSplit"),
+    (e) => {
+      const r = ws.getBoundingClientRect();
+      setSplit(((e.clientX - r.left) / r.width) * 100);
+    },
+    () => setSplit(55),
+    (delta) => setSplit((parseFloat(ws.style.getPropertyValue("--split")) || 55) + delta / 8)
+  );
 }
