@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (C) 2026 SlightlyHappy. DAG Brain: https://github.com/SlightlyHappy/DAG_Brain
+ * Created and maintained by SlightlyHappy. See NOTICE for the attribution terms.
+ */
 /**
  * DAG Brain: frontend controller.
  * Causal graph canvas, sources library with AI summaries, notebook,
@@ -330,6 +335,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     reportError("Could not load studies", err);
   }
 });
+
+// DAG Brain, created by SlightlyHappy: https://github.com/SlightlyHappy/DAG_Brain
+console.info("%cDAG Brain%c created by SlightlyHappy · https://github.com/SlightlyHappy/DAG_Brain", "font-weight:600", "font-weight:400");
 
 async function loadHealth() {
   try {
@@ -2689,6 +2697,13 @@ function bindUIEvents() {
   };
 
   // Worldviews
+  $("btnAbout").onclick = async () => {
+    try {
+      const h = await api("/api/health");
+      $("aboutVersion").textContent = `Version ${h.version}, ${h.license}`;
+    } catch (e) { /* the dialog still shows the static notice */ }
+    openDialog("aboutModal");
+  };
   $("btnDraftQuestion").onclick = () => draftWithAI("question");
   $("btnDraftSources").onclick = () => draftWithAI("sources");
   $("btnImportRef").onclick = importReference;

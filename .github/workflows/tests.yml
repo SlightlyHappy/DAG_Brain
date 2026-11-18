@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 SlightlyHappy. DAG Brain: https://github.com/SlightlyHappy/DAG_Brain
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+      - name: Quick validation study
+        run: python scripts/validation_report.py --quick
+      - name: Copyright headers present
+        run: |
+          missing=$(grep -L "SPDX-License-Identifier: AGPL-3.0-or-later" backend/*.py tests/*.py scripts/*.py frontend/*.js frontend/*.css frontend/index.html || true)
+          if [ -n "$missing" ]; then echo "Missing copyright header in:"; echo "$missing"; exit 1; fi

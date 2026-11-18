@@ -1,69 +1,61 @@
-# Contributing to DAG_Brain (Causal Studio) 🤝
+# Contributing to DAG Brain
 
-Thank you for your interest in contributing to **DAG_Brain**! Our mission is to build open-source, self-hostable causal research infrastructure that bridges **formal causal inference mathematics** (Judea Pearl's SCMs / DAGitty) with **citation-grounded AI synthesis** (NotebookLM-style RAG) across all scientific disciplines.
+DAG Brain is created and maintained by [SlightlyHappy](https://github.com/SlightlyHappy). Contributions are welcome, from software developers and from epidemiologists, economists, psychologists, statisticians and other researchers. This page explains how contributions are made and reviewed.
 
-We welcome contributions not only from **software engineers and AI developers**, but also from **epidemiologists, economists, psychologists, biostatisticians, and domain researchers**!
+## How contributions work
 
----
+- **Every change goes through a pull request.** Nobody pushes to `main` directly. Each PR needs an approving review from the maintainer, as listed in [`.github/CODEOWNERS`](.github/CODEOWNERS), and passing tests before it can be merged.
+- **The maintainer decides what is merged** and sets the direction of the project. For anything bigger than a small fix, open an issue first, so we can agree on the approach before you spend time on it.
+- **Sign the Contributor License Agreement.** Before your first PR can be merged you must agree to the [CLA](CLA.md), by ticking the box in the PR description or through the CLA bot if it comments on your PR. You keep the copyright to your work; the CLA lets the project keep a single steward and evolve its licensing.
+- **License and name.** The code is licensed under the [GNU AGPL v3](LICENSE) with the additional terms in [NOTICE](NOTICE). The name "DAG Brain" and the logo are not covered by the license (see [TRADEMARKS.md](TRADEMARKS.md)). Do not remove copyright headers or the attribution in the About dialog.
 
-## 🌟 Ways You Can Contribute
-
-### 1. Domain-Specific Seed Models & Case Studies (`backend/seed_data.py`)
-Are you an expert in Epidemiology, Labor Economics, Climate Science, Clinical Trials, Sociology, or Operations Research?
-- You can contribute well-documented reference DAGs with real DOIs, operationalizations, and methodological notes to `backend/seed_data.py` so students and researchers can learn from gold-standard causal graphs.
-
-### 2. Causal Graph Algorithms & Identification Methods (`backend/causal_engine.py`)
-We want our deterministic Python causal engine to be the most helpful pedagogical and analytical engine in open source:
-- **Frontdoor Criterion Solver:** Automated detection of valid frontdoor adjustment sets when backdoor paths are blocked by unmeasured confounders ($U$).
-- **SWIGs (Single-World Intervention Graphs):** Rendering Richardson & Robins node-splitting transformations.
-- **Time-Varying Treatments & $g$-Methods:** Identifying treatment-confounder feedback loops ($X_{t_0} \to L_{t_1} \to X_{t_2}$) that require Marginal Structural Models (IPTW) or the Parametric $g$-Formula rather than standard regression adjustment.
-- **Sensitivity Analysis Calculators:** Built-in E-value guidance for unmeasured confounding edges.
-
-### 3. Scholarly Literature & PDF Connectors (`backend/literature_service.py`)
-- **PubMed / NCBI E-Utilities & EuropePMC full-text XML adapters**
-- **arXiv & Semantic Scholar adapters**
-- **Local PDF Parsing (`Docling` / `PyMuPDF`):** Extracting tables, sample sizes ($N$), and effect sizes from local PDFs dropped into the Left Source Vault.
-- **Zotero / BibTeX Sync:** Two-way sync with a researcher's local Zotero library.
-- **Additional Citation Styles:** MLA, Nature, Science, Lancet, and custom CSL XML support.
-
-### 4. MCP (Model Context Protocol) Server & Agentic Workflows (`backend/agents.py`)
-- Expose `DAG_Brain`'s deterministic graph tools (`check_d_separation`, `propose_causal_edge`, `get_minimal_adjustment_sets`) via an MCP endpoint so Claude Desktop, Cursor, or Gemini CLI can collaborate on a researcher's live canvas.
-
----
-
-## 🛠️ Local Development Setup
-
-`DAG_Brain` is intentionally designed to run with **zero build-step friction**:
+## Workflow
 
 ```bash
-# 1. Clone your fork
+# 1. Fork the repository on GitHub, then clone your fork
 git clone https://github.com/YOUR-USERNAME/DAG_Brain.git
 cd DAG_Brain
+git remote add upstream https://github.com/SlightlyHappy/DAG_Brain.git
 
-# 2. Launch with one click (creates .venv if needed and starts on http://127.0.0.1:8000)
-./start.sh        # macOS / Linux
-.\start.ps1       # Windows PowerShell
-start.bat         # Windows CMD
+# 2. Create a branch for your change
+git checkout -b fix/short-description
+
+# 3. Install and run the tests
+pip install -r requirements-dev.txt
+pytest
+
+# 4. Push to your fork and open a pull request against SlightlyHappy/DAG_Brain:main
 ```
 
-### Running the Verification Suite
-Before submitting a Pull Request, verify that the causal math engine, citation formatters, and ASGI endpoints pass all checks:
+Keep pull requests focused: one change per PR, with tests. New source files start with the same copyright header as the existing ones:
 
-```bash
-python -c "
-from starlette.testclient import TestClient
-from backend.main import app
-with TestClient(app) as client:
-    assert client.get('/api/health').status_code == 200
-    assert len(client.get('/api/projects').json()) >= 2
-print('All checks passed!')
-"
+```python
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 SlightlyHappy. DAG Brain: https://github.com/SlightlyHappy/DAG_Brain
 ```
 
----
+## What a PR must include
 
-## 📜 Architectural Guardrails for PRs
+1. **Tests.** Any change to `backend/causal_core.py`, `backend/causal_engine.py`, `backend/data_analysis.py`, `backend/validation.py` or `backend/dag_eval.py` needs tests in `tests/`. Graph algorithms should be checked against an independent reference (see `tests/reference.py`) or against simulated data with a known answer.
+2. **No regression in the validation study.** If you touch the engine or the estimators, run `python scripts/validation_report.py --quick` and confirm that the agreement rates stay at 100%.
+3. **Documentation.** Update the README or ARCHITECTURE if behaviour changes.
 
-1. **Deterministic Math First:** Never delegate graph-theoretic calculations ($d$-separation, cycle detection, minimal adjustment sets, collider detection) to an LLM prompt. All graph properties must be computed deterministically in `backend/causal_engine.py`.
-2. **Human-in-the-Loop Governance:** AI agents must never silently mutate the researcher's graph. All AI suggestions must flow through `GraphPatchProposal` objects so the researcher maintains full epistemic control and auditability.
-3. **Zero Mandatory Cloud Lock-In:** Every feature must continue to work in self-hosted environments using local **Ollama** models, **OpenRouter**, or offline mode.
+## Design rules
+
+1. **Deterministic maths first.** Graph properties (d-separation, adjustment sets, cycles, instruments) are computed in `backend/causal_core.py`, never by a language model.
+2. **The AI only proposes.** AI output must go through `backend/validation.py` as proposals the researcher accepts or rejects. Retrieved text is untrusted input and must pass through `backend/untrusted.py`.
+3. **Honest claims.** Label results by what establishes them: structural validity, identification under the graph's assumptions, or scientific support. Never present an association as a causal effect.
+4. **Local first.** Every feature must work self-hosted, with local models and with `OFFLINE_MODE` on. Outbound requests go through `backend/net.py`.
+5. **Legal sources only.** Full-text discovery uses open-access and institutional routes.
+
+## Good first contributions
+
+- Published reference DAGs for the extraction benchmark (`benchmarks/cases/`), each with its citation.
+- Front-door identification and estimation.
+- Additional citation styles.
+- Grouped-variable views and pathway filters on the canvas.
+- Spreadsheet import of variables and arrows.
+
+## Reporting security issues
+
+Do not open a public issue. Use GitHub's private vulnerability reporting on the repository (Security tab, "Report a vulnerability").

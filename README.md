@@ -6,7 +6,9 @@
 
 **An open-source, self-hostable workspace for building causal diagrams you can defend.**
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-3b82f6.svg)](LICENSE)
+Created and maintained by [**SlightlyHappy**](https://github.com/SlightlyHappy).
+
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-3b82f6.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-10b981.svg)](pyproject.toml)
 [![Validated](https://img.shields.io/badge/engine-validated-0f766e.svg)](docs/VALIDATION.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-34d399.svg)](CONTRIBUTING.md)
@@ -196,6 +198,18 @@ For a genuinely air-gapped deployment you must also control the host itself: no 
 - [docs/BENCHMARK.md](docs/BENCHMARK.md): AI-drafted DAGs against reference DAGs.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to contribute.
 
-## License
+## Contributing
 
-[Apache License 2.0](LICENSE).
+Contributions are welcome through pull requests. Every change is reviewed and approved by the maintainer before it reaches `main`, and contributors agree to the [Contributor License Agreement](CLA.md) with their first pull request. Start with [CONTRIBUTING.md](CONTRIBUTING.md); for anything larger than a small fix, open an issue first.
+
+## License and attribution
+
+DAG Brain is created and maintained by [SlightlyHappy](https://github.com/SlightlyHappy). Copyright © 2026 SlightlyHappy.
+
+The code is free software under the [GNU Affero General Public License v3.0 or later](LICENSE), with the additional terms in [NOTICE](NOTICE):
+
+- **Attribution stays.** Any copy or modified version must keep the copyright headers and the notice "DAG Brain, created by SlightlyHappy", with a link to this repository, in its About screen or equivalent legal notices.
+- **Source stays open.** If you modify DAG Brain and let others use it, including as a hosted website or service, you must give those users the complete source code of your version under the same license.
+- **The name is not included.** "DAG Brain" and its logo identify the official project. A modified version you distribute or host must use its own name and logo (see [TRADEMARKS.md](TRADEMARKS.md)).
+
+Researchers, labs and institutions are free to run, study and modify DAG Brain for their own work. For other licensing arrangements, open an issue.

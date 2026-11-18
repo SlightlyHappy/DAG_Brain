@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (C) 2026 SlightlyHappy. DAG Brain: https://github.com/SlightlyHappy/DAG_Brain
+ * Created and maintained by SlightlyHappy. See NOTICE for the attribution terms.
+ */
 /* =========================================================================
    DAG Brain: interface styles
    Concept: a researcher's pen on graph paper. Restrained ink chrome, one
@@ -1419,3 +1424,10 @@ details.wv-action-group[open] summary { margin-bottom: 4px; }
 @media (max-width: 1080px) {
   .center-workspace.mode-split { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
 }
+
+/* Brand doubles as the About button. */
+button.brand { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; border-radius: var(--radius); padding-top: 4px; padding-bottom: 4px; }
+button.brand:hover { background: var(--surface-3); }
+.about-body p + p { margin-top: 10px; }
+.about-body a { color: var(--accent-text); }
+.about-credit { font-size: var(--fs-lg); font-weight: 500; }

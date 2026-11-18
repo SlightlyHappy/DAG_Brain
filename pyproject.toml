@@ -1,10 +1,12 @@
 [project]
 name = "dag-brain"
-version = "0.1.0"
-description = "Open-Source, Self-Hostable AI-Assisted Causal Modelling & Research Notebook Studio (DAGitty + NotebookLM)"
+version = "0.4.0"
+description = "DAG Brain by SlightlyHappy: a self-hosted workspace for causal diagrams you can defend"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "SlightlyHappy" }]
+maintainers = [{ name = "SlightlyHappy" }]
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
@@ -28,3 +30,8 @@ testpaths = ["tests"]
 
 [project.scripts]
 dag-brain = "backend.main:run"
+
+[project.urls]
+Homepage = "https://github.com/SlightlyHappy/DAG_Brain"
+Source = "https://github.com/SlightlyHappy/DAG_Brain"
+Issues = "https://github.com/SlightlyHappy/DAG_Brain/issues"

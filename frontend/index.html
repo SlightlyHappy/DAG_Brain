@@ -1,10 +1,17 @@
 <!DOCTYPE html>
+<!--
+  SPDX-License-Identifier: AGPL-3.0-or-later
+  Copyright (C) 2026 SlightlyHappy. DAG Brain: https://github.com/SlightlyHappy/DAG_Brain
+  Created and maintained by SlightlyHappy. See NOTICE for the attribution terms.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
   <title>DAG Brain</title>
+  <meta name="author" content="SlightlyHappy" />
+  <meta name="description" content="DAG Brain: a self-hosted workspace for causal diagrams you can defend. Created by SlightlyHappy." />
   <link rel="stylesheet" href="/static/styles.css" />
   <script>
     try { const t = localStorage.getItem("dagbrain.theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
@@ -71,7 +78,7 @@
       <svg class="i"><use href="#i-panel-left"/></svg>
     </button>
 
-    <div class="brand">
+    <button class="brand" id="btnAbout" type="button" title="About DAG Brain, created by SlightlyHappy" aria-label="About DAG Brain">
       <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
         <path d="M8.5 8.6 18.4 12.9M8.5 19.4l9.9-4.3" class="brand-edge"/>
         <circle cx="6.5" cy="7.5" r="3.2" class="brand-node"/>
@@ -79,7 +86,7 @@
         <circle cx="21.5" cy="14" r="3.6" class="brand-node brand-node-accent"/>
       </svg>
       <span class="brand-name">DAG Brain</span>
-    </div>
+    </button>
 
     <div class="study-switch">
       <label class="sr-only" for="projectSelect">Study</label>
@@ -775,6 +782,28 @@
         <button id="btnCreateProjectConfirm" class="btn btn-primary" type="button">Create study</button>
       </footer>
     </form>
+  </dialog>
+
+  <dialog id="aboutModal" class="dialog" aria-labelledby="aboutTitle">
+    <div class="dialog-inner">
+      <header class="dialog-head">
+        <div>
+          <h2 id="aboutTitle">DAG Brain</h2>
+          <p class="muted">A self-hosted workspace for causal diagrams you can defend.</p>
+        </div>
+        <button class="icon-btn" type="button" data-close="aboutModal" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="dialog-body about-body">
+        <p class="about-credit">Created and maintained by <a href="https://github.com/SlightlyHappy" target="_blank" rel="noopener noreferrer">SlightlyHappy</a>.</p>
+        <p><span id="aboutVersion">Version</span>. Source code: <a href="https://github.com/SlightlyHappy/DAG_Brain" target="_blank" rel="noopener noreferrer">github.com/SlightlyHappy/DAG_Brain</a></p>
+        <p class="muted">Copyright © 2026 SlightlyHappy. DAG Brain is free software: you can redistribute it and modify it under the terms of the GNU Affero General Public License, version 3 or later, with the additional attribution and trademark terms in the NOTICE file. It comes with ABSOLUTELY NO WARRANTY. If you run a modified version for others, you must offer them its source code and keep this notice.</p>
+        <p class="muted">"DAG Brain" and its logo identify the official project and may not be used for modified versions. Contributions are welcome through pull requests.</p>
+      </div>
+      <footer class="dialog-foot">
+        <a class="btn btn-ghost" href="https://github.com/SlightlyHappy/DAG_Brain/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
+        <a class="btn btn-secondary" href="https://github.com/SlightlyHappy/DAG_Brain" target="_blank" rel="noopener noreferrer">View source</a>
+      </footer>
+    </div>
   </dialog>
 
   <div id="toastRegion" class="toasts" aria-live="polite" aria-atomic="false"></div>
