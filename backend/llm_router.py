@@ -1,6 +1,7 @@
 import json
 from typing import Dict, Any, List, Optional
 import httpx
+from .net import client as http_client
 from .config import get_runtime_settings, PROVIDER_PRESETS
 
 
@@ -8,7 +9,7 @@ async def fetch_ollama_models(base_url: Optional[str] = None) -> List[str]:
     settings = get_runtime_settings()
     url = (base_url or settings.get("ollama_base_url") or "http://localhost:11434").rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with http_client(timeout=3.0) as client:
             resp = await client.get(f"{url}/api/tags")
             if resp.status_code == 200:
                 data = resp.json()
@@ -39,7 +40,7 @@ async def call_llm_json(
     ]
 
     try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
+        async with http_client(timeout=45.0) as client:
             if provider == "ollama":
                 base_url = (settings.get("ollama_base_url") or "http://localhost:11434").rstrip("/")
                 payload = {

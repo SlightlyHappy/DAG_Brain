@@ -2,61 +2,102 @@ import re
 import asyncio
 from urllib.parse import quote_plus
 from typing import List, Dict, Any, Optional
-import httpx
 from .schemas import CitationSource, PaperAISummary, StudyDesign, CitationStyle
 from .config import get_runtime_settings
 from .llm_router import call_llm_json
+from .net import client as http_client, OfflineBlocked
+from .untrusted import GUARD, wrap
 
 
 def build_external_links(
     title: str, doi: str = "", url: str = "", pdf_url: str = ""
 ) -> Dict[str, str]:
+    """Discovery links only. Full text comes from legal open-access locations
+    (Unpaywall, OpenAlex, CORE, Europe PMC) or the researcher's institutional proxy."""
     settings = get_runtime_settings()
-    scihub_base = (
-        settings.get("scihub_mirror_url") or "https://sci-hub.name"
-    ).rstrip("/")
-    clean_doi = (
-        doi.replace("https://doi.org/", "")
-        .replace("http://doi.org/", "")
-        .strip()
-    )
-    query_target = clean_doi if clean_doi else title
-    encoded_q = quote_plus(query_target or "causal inference")
-    encoded_title = quote_plus(title or query_target)
-
-    scholar_url = f"https://scholar.google.com/scholar?q={encoded_title}"
-    core_url = f"https://core.ac.uk/search?q={encoded_title}"
-    scihub_url = (
-        f"{scihub_base}/{clean_doi}"
-        if clean_doi
-        else f"{scihub_base}/{encoded_title}"
-    )
-    primary_url = url or (f"https://doi.org/{clean_doi}" if clean_doi else scholar_url)
-
+    clean_doi = re.sub(r"^https?://(dx\.)?doi\.org/", "", (doi or "").strip(), flags=re.IGNORECASE)
+    encoded_title = quote_plus(title or clean_doi or "causal inference")
+    doi_url = f"https://doi.org/{clean_doi}" if clean_doi else ""
+    primary_url = url or doi_url
+    prefix = (settings.get("ezproxy_prefix") or "").strip()
+    proxy_url = f"{prefix}{quote_plus(primary_url, safe=':/')}" if prefix and primary_url else ""
     return {
         "doi": clean_doi,
         "url": primary_url,
         "pdf_url": pdf_url,
-        "scholar_url": scholar_url,
-        "core_url": core_url,
-        "scihub_url": scihub_url,
+        "scholar_url": f"https://scholar.google.com/scholar?q={encoded_title}",
+        "core_url": f"https://core.ac.uk/search?q={encoded_title}",
+        "proxy_url": proxy_url,
     }
 
 
 def enrich_source_links(src: CitationSource) -> CitationSource:
-    links = build_external_links(
-        title=src.title, doi=src.doi, url=src.url, pdf_url=src.pdf_url
-    )
+    links = build_external_links(title=src.title, doi=src.doi, url=src.url, pdf_url=src.pdf_url)
     src.doi = links["doi"]
     src.url = links["url"]
     if not src.pdf_url:
         src.pdf_url = links["pdf_url"]
     src.scholar_url = links["scholar_url"]
     src.core_url = links["core_url"]
-    src.scihub_url = links["scihub_url"]
+    src.proxy_url = links["proxy_url"]
     if not src.ai_summary:
         src.ai_summary = _heuristic_paper_summary(src)
     return src
+
+
+async def find_open_access(src: CitationSource) -> CitationSource:
+    """Look up a legal open-access copy by DOI with Unpaywall (needs a contact email)."""
+    if not src.doi:
+        return src
+    email = (get_runtime_settings().get("scholarly_email") or "").strip()
+    if not email or "@" not in email:
+        return src
+    try:
+        async with http_client(timeout=8.0) as client:
+            resp = await client.get(f"https://api.unpaywall.org/v2/{quote_plus(src.doi, safe='/')}", params={"email": email})
+            if resp.status_code == 200:
+                best = (resp.json() or {}).get("best_oa_location") or {}
+                src.oa_url = best.get("url_for_pdf") or best.get("url") or src.oa_url
+                if best.get("url_for_pdf") and not src.pdf_url:
+                    src.pdf_url = best["url_for_pdf"]
+    except (OfflineBlocked, Exception):
+        pass
+    return src
+
+
+DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+)", re.IGNORECASE)
+
+
+def extract_pdf(path: str) -> Dict[str, Any]:
+    """Extract text and basic metadata from an uploaded PDF (local, no network)."""
+    from pypdf import PdfReader
+
+    reader = PdfReader(path)
+    pages = []
+    for page in reader.pages[:40]:
+        try:
+            pages.append(page.extract_text() or "")
+        except Exception:
+            pages.append("")
+    text = "\n".join(pages)
+    meta = reader.metadata or {}
+    doi_match = DOI_RE.search(text[:20000])
+    title = (getattr(meta, "title", None) or "").strip()
+    if not title:
+        first_lines = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 20]
+        title = first_lines[0][:250] if first_lines else ""
+    abstract = ""
+    m = re.search(r"abstract[:\s]*(.{200,2500}?)(?:\n\s*\n|introduction|keywords|background)", text, re.IGNORECASE | re.DOTALL)
+    if m:
+        abstract = re.sub(r"\s+", " ", m.group(1)).strip()
+    return {
+        "title": title,
+        "author": (getattr(meta, "author", None) or "").strip(),
+        "doi": doi_match.group(1).rstrip(".,;)") if doi_match else "",
+        "abstract": abstract,
+        "text": text,
+        "pages": len(reader.pages),
+    }
 
 
 def classify_study_design(title: str, abstract: str) -> StudyDesign:
@@ -176,7 +217,7 @@ async def _search_openalex(query: str, limit: int = 5) -> List[CitationSource]:
     headers = {"User-Agent": f"DAG_Brain/0.2 (mailto:{email})"}
     results: List[CitationSource] = []
     try:
-        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+        async with http_client(timeout=10.0, headers=headers) as client:
             params = {
                 "search": query,
                 "per-page": str(limit),
@@ -218,7 +259,6 @@ async def _search_openalex(query: str, limit: int = 5) -> List[CitationSource]:
                         pdf_url=links["pdf_url"],
                         scholar_url=links["scholar_url"],
                         core_url=links["core_url"],
-                        scihub_url=links["scihub_url"],
                         source_engine="OpenAlex",
                         abstract=abstract,
                         study_design=design,
@@ -246,7 +286,7 @@ async def _search_core_ac_uk(query: str, limit: int = 5) -> List[CitationSource]
 
     results: List[CitationSource] = []
     try:
-        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+        async with http_client(timeout=10.0, headers=headers) as client:
             resp = await client.get(
                 "https://api.core.ac.uk/v3/search/works",
                 params={"q": query, "limit": str(limit)},
@@ -285,7 +325,6 @@ async def _search_core_ac_uk(query: str, limit: int = 5) -> List[CitationSource]
                         pdf_url=download_url,
                         scholar_url=links["scholar_url"],
                         core_url=links["core_url"],
-                        scihub_url=links["scihub_url"],
                         source_engine="CORE.ac.uk",
                         abstract=abstract,
                         full_text_snippet=full_text,
@@ -308,7 +347,7 @@ async def _search_europepmc(query: str, limit: int = 5) -> List[CitationSource]:
     """Queries EuropePMC / PubMed REST API for biomedical & life-science literature."""
     results: List[CitationSource] = []
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with http_client(timeout=10.0) as client:
             resp = await client.get(
                 "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
                 params={
@@ -355,7 +394,16 @@ async def _search_europepmc(query: str, limit: int = 5) -> List[CitationSource]:
                         url=links["url"],
                         scholar_url=links["scholar_url"],
                         core_url=links["core_url"],
-                        scihub_url=links["scihub_url"],
+                        europepmc_url=(
+                            f"https://europepmc.org/article/PMC/{item.get('pmcid')}"
+                            if item.get("pmcid") and item.get("isOpenAccess") == "Y"
+                            else (f"https://europepmc.org/article/MED/{pmid}" if pmid else "")
+                        ),
+                        oa_url=(
+                            f"https://europepmc.org/article/PMC/{item.get('pmcid')}"
+                            if item.get("pmcid") and item.get("isOpenAccess") == "Y"
+                            else ""
+                        ),
                         source_engine="PubMed / EuropePMC",
                         abstract=abstract,
                         study_design=design,
@@ -378,7 +426,7 @@ async def _search_google_scholar_and_s2(
 ) -> List[CitationSource]:
     """
     Searches Google Scholar via SerpApi (if key configured) or Semantic Scholar Graph API,
-    attaching direct scholar.google.com, core.ac.uk, and sci-hub.name resolution links.
+    attaching discovery links (Google Scholar, CORE) and legal open-access locations.
     """
     settings = get_runtime_settings()
     serp_key = (settings.get("serpapi_api_key") or "").strip()
@@ -387,7 +435,7 @@ async def _search_google_scholar_and_s2(
 
     if serp_key:
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with http_client(timeout=10.0) as client:
                 resp = await client.get(
                     "https://serpapi.com/search.json",
                     params={
@@ -421,8 +469,7 @@ async def _search_google_scholar_and_s2(
                             pdf_url=links["pdf_url"],
                             scholar_url=links["scholar_url"],
                             core_url=links["core_url"],
-                            scihub_url=links["scihub_url"],
-                            source_engine="Google Scholar",
+                                source_engine="Google Scholar",
                             abstract=snippet,
                             study_design=classify_study_design(title, snippet),
                             sample_size=extract_sample_size(snippet),
@@ -441,7 +488,7 @@ async def _search_google_scholar_and_s2(
     if s2_key:
         headers["x-api-key"] = s2_key
     try:
-        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+        async with http_client(timeout=10.0, headers=headers) as client:
             resp = await client.get(
                 "https://api.semanticscholar.org/graph/v1/paper/search",
                 params={
@@ -481,7 +528,6 @@ async def _search_google_scholar_and_s2(
                         pdf_url=links["pdf_url"],
                         scholar_url=links["scholar_url"],
                         core_url=links["core_url"],
-                        scihub_url=links["scihub_url"],
                         source_engine="Google Scholar / S2",
                         abstract=abstract,
                         study_design=classify_study_design(title, abstract),
@@ -515,7 +561,7 @@ async def search_tavily_and_web(
 
     if tavily_key:
         try:
-            async with httpx.AsyncClient(timeout=14.0) as client:
+            async with http_client(timeout=14.0) as client:
                 payload = {
                     "api_key": tavily_key,
                     "query": query,
@@ -550,8 +596,7 @@ async def search_tavily_and_web(
                             url=links["url"],
                             scholar_url=links["scholar_url"],
                             core_url=links["core_url"],
-                            scihub_url=links["scihub_url"],
-                            source_engine="Tavily Web",
+                                source_engine="Tavily Web",
                             abstract=content,
                             study_design=classify_study_design(title, content),
                             sample_size=extract_sample_size(content),
@@ -564,7 +609,7 @@ async def search_tavily_and_web(
 
     if not sources and searxng_url:
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with http_client(timeout=10.0) as client:
                 resp = await client.get(
                     f"{searxng_url}/search",
                     params={"q": query, "format": "json"},
@@ -583,8 +628,7 @@ async def search_tavily_and_web(
                             url=links["url"],
                             scholar_url=links["scholar_url"],
                             core_url=links["core_url"],
-                            scihub_url=links["scihub_url"],
-                            source_engine="SearXNG",
+                                source_engine="SearXNG",
                             abstract=content,
                             study_design=classify_study_design(title, content),
                             key_finding=content[:280],
@@ -603,7 +647,7 @@ async def search_scholarly_literature(
     """
     Federated search across OpenAlex, CORE.ac.uk, EuropePMC/PubMed, Google Scholar/Semantic Scholar,
     and Tavily Web Search. Deduplicates by normalized title/DOI and attaches direct links to
-    Google Scholar, CORE.ac.uk, and Sci-Hub (sci-hub.name).
+    Google Scholar and CORE.ac.uk.
     """
     engine = (engine or "all").lower()
     tasks = []
@@ -656,36 +700,44 @@ async def search_scholarly_literature(
 # AI PAPER SUMMARIZER & CAUSAL CLAIM EXTRACTOR
 # ============================================================================
 
+DESIGN_DIRECTIONALITY = {
+    "Randomized Controlled Trial (RCT)": "established",
+    "Meta-Analysis / Systematic Review": "unclear",       # depends on the pooled designs
+    "Quasi-Experimental (IV / DiD / RDD / MR)": "unclear",  # holds only if its assumptions hold
+    "Longitudinal Cohort": "unclear",
+    "Case-Control": "not_established",
+    "Cross-Sectional / Observational": "not_established",
+    "Theoretical / Mechanism": "not_established",
+    "Web / Report / Preprint": "not_established",
+    "Unclassified": "unclear",
+}
+
+DESIGN_CAVEATS = {
+    "Randomized Controlled Trial (RCT)": "Randomisation addresses confounding of the assigned treatment; check adherence, attrition and whether the trial population matches yours.",
+    "Meta-Analysis / Systematic Review": "Inherits the designs it pools; check whether included studies are randomised or observational, and heterogeneity.",
+    "Quasi-Experimental (IV / DiD / RDD / MR)": "Valid only under design-specific assumptions (exclusion restriction, parallel trends, continuity, no pleiotropy) that must be argued.",
+    "Longitudinal Cohort": "Time ordering helps, but residual and time-varying confounding and attrition remain possible.",
+    "Case-Control": "Prone to selection and recall bias; it estimates odds ratios that approximate risk ratios only for rare outcomes.",
+    "Cross-Sectional / Observational": "Measures exposure and outcome together, so it cannot establish direction; reverse causation and confounding are not ruled out.",
+}
+
+
 def _heuristic_paper_summary(src: CitationSource) -> PaperAISummary:
-    text = (src.abstract or src.key_finding or src.title or "").strip()
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 20]
-    tldr = sentences[0] if sentences else f"{src.study_design} examining {src.title}."
-    claims = sentences[1:3] if len(sentences) > 1 else [tldr]
+    """Keyword-based fallback when no model is available.
 
-    design_lower = src.study_design.lower()
-    if "rct" in design_lower or "meta" in design_lower:
-        grade = "High Causal Internal Validity (Experimental / Pooled Synthesis)"
-        lims = "Check external transportability to target population and treatment adherence."
-        conf = ["Randomization balances baseline observed & unobserved confounders"]
-    elif "quasi" in design_lower:
-        grade = "Strong Quasi-Experimental Identification (IV / MR / DiD)"
-        lims = "Verify exclusion restriction (no pleiotropy / parallel trends assumption)."
-        conf = ["Instrumental / structural identification against unmeasured confounding"]
-    elif "cohort" in design_lower:
-        grade = "Moderate-to-High Observational Validity (Temporal Ordering Established)"
-        lims = "Susceptible to residual unmeasured baseline confounding (U) and attrition bias."
-        conf = ["Baseline demographics", "Longitudinal pre-exposure covariates"]
-    else:
-        grade = "Associational / Hypothesis-Generating Evidence"
-        lims = "Cross-sectional or ungraded design cannot rule out reverse causality or unmeasured confounding."
-        conf = ["Requires explicit backdoor adjustment in DAG"]
-
+    It reports only what it can actually derive (the first sentence and design
+    keywords). It never invents controlled confounders or causal claims.
+    """
+    text = (src.abstract or src.key_finding or "").strip()
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", text) if len(x.strip()) > 20]
     return PaperAISummary(
-        tldr=tldr,
-        causal_claims=claims,
-        confounders_controlled=conf,
-        limitations_and_bias=lims,
-        methodology_grade=grade,
+        tldr=sentences[0] if sentences else "",
+        causal_claims=[],
+        confounders_controlled=[],
+        limitations_and_bias=DESIGN_CAVEATS.get(src.study_design, ""),
+        methodology_grade=f"{src.study_design} (detected from keywords, not verified)",
+        directionality=DESIGN_DIRECTIONALITY.get(src.study_design, "unclear"),
+        extracted_by="heuristic",
     )
 
 
@@ -696,6 +748,8 @@ async def summarize_paper_with_ai(src: CitationSource) -> PaperAISummary:
     """
     sys_prompt = """You are an expert Epidemiologist, Econometrician, and Research Methodologist.
 Given a scientific paper's metadata and abstract/text, extract a concise, high-signal reading summary for a causal inference researcher.
+Report only what the text states. Do not infer controls, populations or findings that are not written in it; leave a field empty instead.
+An association is not a causal claim: phrase claims as "associated with" unless the design is experimental or a stated quasi-experimental identification strategy.
 Return ONLY valid JSON with this exact structure:
 {
   "tldr": "1-2 sentence plain-English summary of what the paper found.",
@@ -707,17 +761,21 @@ Return ONLY valid JSON with this exact structure:
     "List of likely baseline confounders, instruments, or study design controls used"
   ],
   "limitations_and_bias": "Key threats to causal validity (e.g., reverse causality, unmeasured confounding, selection/collider bias).",
-  "methodology_grade": "Evidence hierarchy rating (e.g., High: RCT/MR, Moderate: Longitudinal Cohort, Low: Cross-Sectional Association)"
-}"""
+  "methodology_grade": "Evidence hierarchy rating (e.g., High: RCT/MR, Moderate: Longitudinal Cohort, Low: Cross-Sectional Association)",
+  "population": "Study population as stated, or empty",
+  "directionality": "established | not_established | unclear  (does the design establish which variable affects which?)"
+}
 
-    user_prompt = f"""Title: {src.title}
-Authors: {', '.join(src.authors)} ({src.year or 'n.d.'})
-Venue: {src.journal}
-Detected Study Design: {src.study_design}
-Sample Size: {src.sample_size}
-Abstract / Content:
-{src.abstract or src.full_text_snippet or src.key_finding}
-"""
+""" + GUARD
+
+    user_prompt = "Summarise this document:\n" + wrap(
+        src.id,
+        "paper",
+        f"Title: {src.title}\nAuthors: {', '.join(src.authors)} ({src.year or 'n.d.'})\nVenue: {src.journal}\n"
+        f"Detected design: {src.study_design}\nSample size: {src.sample_size}\n\n"
+        f"{src.abstract or src.full_text_snippet or src.key_finding}",
+        4000,
+    )
     llm_res = await call_llm_json(sys_prompt, user_prompt)
     if llm_res and isinstance(llm_res, dict) and llm_res.get("tldr"):
         return PaperAISummary(
@@ -728,6 +786,14 @@ Abstract / Content:
             ],
             limitations_and_bias=str(llm_res.get("limitations_and_bias", "")),
             methodology_grade=str(llm_res.get("methodology_grade", src.study_design)),
+            population=str(llm_res.get("population", ""))[:300],
+            # The design caps what the model may claim about direction.
+            directionality=(
+                "not_established"
+                if DESIGN_DIRECTIONALITY.get(src.study_design) == "not_established"
+                else (llm_res.get("directionality") if llm_res.get("directionality") in ("established", "not_established", "unclear") else "unclear")
+            ),
+            extracted_by="ai",
         )
     return _heuristic_paper_summary(src)
 

@@ -1,3 +1,4 @@
+import hashlib
 import re
 from typing import Dict, Any, List, Optional
 from .schemas import (
@@ -16,22 +17,43 @@ from .literature_service import (
     enrich_source_links,
 )
 from .llm_router import call_llm_json
+from .config import get_runtime_settings
+from .untrusted import GUARD, scan, wrap
+
+
+def _provenance(agent_mode: str, sys_prompt: str, user_prompt: str, used_llm: bool, source_ids: List[str]) -> Dict[str, Any]:
+    st = get_runtime_settings()
+    return {
+        "agent_mode": agent_mode,
+        "provider": st.get("active_provider", "") if used_llm else "deterministic",
+        "model": st.get("active_model", "") if used_llm else "rule-based co-pilot",
+        "used_llm": used_llm,
+        "prompt_sha256": hashlib.sha256((sys_prompt + "\n" + user_prompt).encode("utf-8")).hexdigest(),
+        "source_ids": source_ids,
+    }
+
+
+def _flag_sources(sources: List[CitationSource]) -> None:
+    for src in sources:
+        src.injection_flags = scan(" ".join([src.title or "", src.abstract or "", src.full_text_snippet or "", src.key_finding or ""]))
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are DAG_Brain, an elite AI Causal Modelling Collaborator, Methodologist, and Socratic Research Assistant.
 You combine the mathematical rigor of Judea Pearl's Structural Causal Models (DAGitty) with the source-grounded synthesis of NotebookLM.
 
 ACTIVE AGENT PERSONA: {agent_mode_upper}
-- If TOPIC_REFINER: Help the researcher narrow a broad research interest into 2-3 sharp, identifiable causal questions using PICO/PECO (Population, Exposure, Comparator, Outcome, Time-window) and FINER criteria. Propose concrete Exposure (X), Outcome (Y), and Confounder nodes.
+- If TOPIC_REFINER: Help the researcher turn a broad interest into 2-3 precise causal questions. Use the domain-neutral structure: unit or population, exposure or treatment, comparator or counterfactual contrast, outcome, time horizon, and target estimand (ATE, ATT, controlled direct effect, natural direct or indirect effect). Map it onto the discipline's convention only when it fits: PICO for clinical interventions, PECO for epidemiological exposures, treatment effects and policy counterfactuals in economics, interventions on structural causal models in ML, longitudinal constructs and mediation in psychology. Propose concrete exposure, outcome and confounder variables.
 - If SOCRATIC: Interview the researcher thoughtfully. Clarify variable operationalizations, temporal ordering (t0 < t1 < t2), target population, and whether proposed variables are confounders, mediators, or colliders before jumping to conclusions.
 - If CRITIC (Devil's Advocate / Reviewer 2): Actively challenge the researcher's DAG. Point out open backdoor paths, unmeasured confounding (U), reverse causality, selection bias, overadjustment on mediators, or collider conditioning traps (M-bias / Berkson's bias).
-- If SCOUT (Literature & Internet Research): Synthesize empirical evidence from the retrieved scholarly papers (OpenAlex, CORE.ac.uk, PubMed, Google Scholar) and web search (Tavily). Distinguish observational correlation from causal identification (RCT, Mendelian Randomization, DiD, Longitudinal Cohort). Attach citations using {citation_style_upper} style.
+- If SCOUT (Literature & Internet Research): Synthesize evidence from the retrieved documents. For each study say whether it shows an association, experimental evidence, quasi-experimental evidence, mechanistic evidence or only an author hypothesis, and whether its design establishes the direction of the effect (a cross-sectional association does not). Attach citations using {citation_style_upper} style.
 - If SYNTHESIS: Draft structured Markdown rationale sections and methodology text suitable for a peer-reviewed journal's Methods / Supplementary section, citing sources in {citation_style_upper} format.
 
 CRITICAL RULES:
-1. Never mutate the graph silently. Propose changes via the `proposals` array so the researcher can review and approve them.
-2. Explicitly distinguish between Empirical evidence (backed by citations), Researcher hypotheses, and AI-inferred assumptions.
-3. Return ONLY valid JSON matching this exact schema:
+1. You cannot change the graph. You can only propose changes in the `proposals` array; the application validates them and the researcher decides.
+2. Every arrow you propose is an AI hypothesis. Never describe an association as a causal effect, and say which evidence class supports a claim: empirical association, experimental, quasi-experimental, mechanistic, author hypothesis, or AI hypothesis.
+3. Cite sources only by the ids shown in the context (for example src_ab12cd34) in `citation_ids`. Never invent DOIs, ids or findings.
+4. Graph properties (paths, adjustment sets, identifiability) come from the deterministic engine in the context. Do not compute or contradict them.
+5. Return ONLY valid JSON matching this exact schema:
 {{
   "reply_markdown": "Your rich Markdown response (use bolding, bullet points, and inline citations in {citation_style_upper} format)...",
   "socratic_questions": [
@@ -60,16 +82,16 @@ CRITICAL RULES:
       "edge": {{
         "source": "source_node_id",
         "target": "target_node_id",
-        "epistemic_status": "ai_proposed",
         "mechanism": "Biological/economic/behavioral mechanism",
         "effect_direction": "positive | negative | non_linear | unknown",
-        "confidence": 0.8
+        "citation_ids": ["src_... ids from the context only, or empty"]
       }}
     }}
   ],
   "notebook_append_suggestion": "Optional Markdown paragraph the researcher can insert into their Research Notebook with 1 click."
 }}
-"""
+
+{guard}"""
 
 
 async def run_agent_turn(
@@ -129,15 +151,16 @@ async def run_agent_turn(
         for n in project.nodes
     ]
     edges_summary = [
-        f"- {e.source} -> {e.target} (status={e.epistemic_status}, mechanism='{e.mechanism}', citations={len(e.citation_ids)})"
+        f"- {e.source} {'<->' if e.edge_type == 'bidirected' else '->'} {e.target} (evidence={e.evidence_class}{', contested' if e.contested else ''}, mechanism='{e.mechanism}', citations={len(e.citation_ids)})"
         for e in project.edges
     ]
+    _flag_sources(fetched_papers)
     sources_summary = [
-        f"- [{s.id}] {format_in_text_citation(s, project.citation_style, i+1)} '{s.title}' ({s.study_design}, Engine:{s.source_engine}) DOI:{s.doi}"
+        wrap(s.id, "library_source", f"{format_in_text_citation(s, project.citation_style, i+1)} {s.title} ({s.year}; design: {s.study_design}; DOI: {s.doi})\n{(s.ai_summary.tldr if s.ai_summary else s.key_finding) or ''}", 600)
         for i, s in enumerate(project.sources[:15])
     ]
     fetched_summary = [
-        f"- [NEW/{s.source_engine}] '{s.title}' ({s.year}, {s.journal}, Design: {s.study_design}, DOI: {s.doi}): {s.key_finding}"
+        wrap(s.id, "retrieved_paper", f"{s.title} ({s.year}; {s.journal}; design: {s.study_design}; DOI: {s.doi})\n{s.abstract or s.key_finding}", 1500)
         for s in fetched_papers
     ]
 
@@ -165,7 +188,11 @@ EXISTING CITATION VAULT:
 
 NEWLY RETRIEVED SCHOLARLY & WEB SOURCES:
 {chr(10).join(fetched_summary) if fetched_summary else "(None fetched this turn)"}
-{f"TAVILY WEB SYNTHESIS: {web_answer}" if web_answer else ""}
+{wrap("web_answer", "web_summary", web_answer, 1200) if web_answer else ""}
+
+DETERMINISTIC ENGINE STATUS:
+- Identification: {(diagnostics.get('identification') or {}).get('status', 'not computed')}
+- Instrument candidates (graphical only): {[i['label'] for i in diagnostics.get('instrumental_variables', [])]}
 
 RESEARCHER MESSAGE:
 {user_message}
@@ -174,6 +201,7 @@ RESEARCHER MESSAGE:
     sys_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         agent_mode_upper=agent_mode.upper(),
         citation_style_upper=project.citation_style.upper(),
+        guard=GUARD,
     )
 
     llm_data = await call_llm_json(
@@ -184,18 +212,14 @@ RESEARCHER MESSAGE:
     )
 
     if llm_data and isinstance(llm_data, dict) and llm_data.get("reply_markdown"):
-        return _normalize_agent_output(
-            llm_data, project, fetched_papers, agent_mode, used_llm=True
-        )
-
-    return _run_deterministic_copilot(
-        project,
-        user_message,
-        agent_mode,
-        diagnostics,
-        fetched_papers,
-        web_answer=web_answer,
+        out = _normalize_agent_output(llm_data, project, fetched_papers, agent_mode, used_llm=True)
+    else:
+        out = _run_deterministic_copilot(project, user_message, agent_mode, diagnostics, fetched_papers, web_answer=web_answer)
+    out["provenance"] = _provenance(
+        agent_mode, sys_prompt, user_prompt, out.get("used_llm", False),
+        [s.id for s in project.sources[:15]] + [s.id for s in fetched_papers],
     )
+    return out
 
 
 async def run_autonomous_deep_research(
@@ -205,8 +229,8 @@ async def run_autonomous_deep_research(
     Autonomous Multi-Hop Internet & Scholarly Research Agent:
     1. Formulates 3 targeted queries (Direct Causal Effect, Confounders/Bias, Instruments/Mechanisms).
     2. Searches OpenAlex, CORE.ac.uk, PubMed/EuropePMC, Google Scholar/S2, and Tavily Web.
-    3. Saves top discovered papers directly into the project's Citation Vault with AI Executive Summaries.
-    4. Proposes new evidence-backed Confounder/Mediator nodes and edges.
+    3. Stages the top new papers for review (they do not enter the library until accepted).
+    4. Proposes arrows as AI hypotheses that cite the staged papers.
     """
     engine = CausalEngine(project.nodes, project.edges)
     diagnostics = engine.run_diagnostics(estimand=project.estimand_type)
@@ -237,7 +261,7 @@ async def run_autonomous_deep_research(
     # Deduplicate against existing vault and save up to 5 new high-value papers
     existing_keys = {
         (s.doi.lower().strip() if s.doi else re.sub(r"[^a-z0-9]", "", s.title.lower())[:50])
-        for s in project.sources
+        for s in list(project.sources) + list(project.staged_sources)
     }
     newly_saved: List[CitationSource] = []
     for cand in discovered_sources:
@@ -250,48 +274,51 @@ async def run_autonomous_deep_research(
             continue
         existing_keys.add(key)
         cand = enrich_source_links(cand)
+        _flag_sources([cand])
+        cand.added_by = "ai"
         cand.ai_summary = await summarize_paper_with_ai(cand)
-        project.sources.append(cand)
         newly_saved.append(cand)
         if len(newly_saved) >= 4:
             break
 
     # Build executive research report and proposals
     lines = [
-        f"### 🌐 Autonomous Deep Research Report: *{base_focus}*",
-        f"I autonomously queried **OpenAlex**, **CORE.ac.uk**, **PubMed/EuropePMC**, **Google Scholar**, and **Tavily Web Search**, saving **{len(newly_saved)} new peer-reviewed sources** directly into your Study Vault with AI Executive Summaries:",
+        f"### Research report: *{base_focus}*",
+        f"I searched the configured scholarly and web sources and found **{len(newly_saved)} new source(s)**. They are **staged for your review** and have not been added to the library. The summaries below are AI-extracted and unverified.",
     ]
 
     for idx, src in enumerate(newly_saved):
-        cite_str = format_in_text_citation(
-            src, project.citation_style, len(project.sources) - len(newly_saved) + idx + 1
-        )
+        cite_str = format_in_text_citation(src, project.citation_style, len(project.sources) + idx + 1)
         tldr = src.ai_summary.tldr if src.ai_summary else src.key_finding
         grade = src.ai_summary.methodology_grade if src.ai_summary else src.study_design
         lines.append(
-            f"{idx + 1}. **{src.title}** {cite_str} — *{src.journal}* (`{src.source_engine}`)\n"
-            f"   - **Evidence Grade:** `{grade}` {f'| `{src.sample_size}`' if src.sample_size else ''}\n"
-            f"   - **AI Digest:** {tldr}\n"
-            f"   - **Full-Text Links:** [Google Scholar]({src.scholar_url}) • [CORE.ac.uk]({src.core_url}) • [Sci-Hub Mirror]({src.scihub_url})"
+            f"{idx + 1}. **{src.title}** {cite_str}, *{src.journal}* ({src.source_engine})\n"
+            f"   - **Design:** {src.study_design}{f' ({src.sample_size})' if src.sample_size else ''}; AI grade: {grade}\n"
+            f"   - **AI summary (unverified):** {tldr}"
+            + (f"\n   - **Warning:** this source contains instruction-like text ({'; '.join(src.injection_flags)}). It was excluded from proposals." if src.injection_flags else "")
         )
 
     if web_syntheses:
-        lines.append(f"\n#### 🌍 Live Internet Synthesis (Tavily)\n> {web_syntheses[0]}")
+        lines.append(f"\n#### Web summary (unverified)\n> {web_syntheses[0][:800]}")
 
     proposals: List[GraphPatchProposal] = []
-    if newly_saved and exp_id and out_id:
-        top_paper = newly_saved[0]
+    clean = [p for p in newly_saved if not p.injection_flags]
+    already = any(e.source == exp_id and e.target == out_id for e in project.edges)
+    if clean and exp_id and out_id and not already:
+        top_paper = clean[0]
         proposals.append(
             GraphPatchProposal(
                 action="add_edge",
-                title=f"Attach Empirical Evidence ({top_paper.year or 'Study'}) to {exp_label} → {out_label}",
-                rationale=f"Backed by '{top_paper.title}' ({top_paper.study_design}): {top_paper.ai_summary.tldr if top_paper.ai_summary else top_paper.key_finding}",
-                critic_warning=top_paper.ai_summary.limitations_and_bias if top_paper.ai_summary else "",
+                title=f"Hypothesis: {exp_label} → {out_label}",
+                rationale=f"Suggested by '{top_paper.title}' ({top_paper.study_design}). AI summary, unverified: {top_paper.ai_summary.tldr if top_paper.ai_summary else top_paper.key_finding}",
+                critic_warning=(top_paper.ai_summary.limitations_and_bias if top_paper.ai_summary else "")
+                or "Check whether the study design establishes direction before reclassifying this arrow.",
                 edge=CausalEdge(
                     source=exp_id,
                     target=out_id,
-                    epistemic_status="empirical",
-                    mechanism=f"Supported by {top_paper.authors[0] if top_paper.authors else 'Literature'} ({top_paper.year or 'n.d.'})",
+                    evidence_class="ai_hypothesis",
+                    origin="ai",
+                    mechanism=f"Proposed from {top_paper.authors[0] if top_paper.authors else 'the literature'} ({top_paper.year or 'n.d.'})",
                     citation_ids=[top_paper.id],
                     approved_by_researcher=False,
                 ),
@@ -301,12 +328,14 @@ async def run_autonomous_deep_research(
     return {
         "reply_markdown": "\n\n".join(lines),
         "socratic_questions": [
-            f"Having reviewed these {len(newly_saved)} newly saved studies, should we upgrade any hypothesized edges to `Empirical`?",
-            "Which baseline confounders controlled for in the cohort studies are currently missing from our DAG?",
+            "Which of the staged studies establish the direction of the effect, and which only report an association?",
+            "Which confounders adjusted for in these studies are missing from the graph?",
         ],
         "proposals": [p.model_dump() for p in proposals],
         "fetched_papers": [s.model_dump() for s in newly_saved],
+        "staged_sources": [s.model_dump() for s in newly_saved],
         "agent_mode": "deep_research",
+        "provenance": _provenance("deep_research", "deep_research", base_focus, False, [s.id for s in newly_saved]),
     }
 
 
@@ -327,10 +356,13 @@ async def generate_lab_briefing(project: ProjectState) -> str:
     sys_prompt = """You are generating a lively, intellectually rigorous 2-Host Research Lab Briefing (inspired by Google NotebookLM Audio Overview, tailored for causal inference scientists).
 Host 1: Dr. Aria Vance (Lead Investigator — synthesizes the big picture, mechanisms, and empirical papers).
 Host 2: Prof. Marcus Sterling (Causal Methodologist & Reviewer #2 — focuses on d-separation, backdoor paths, collider bias traps, and study design rigor).
-Return ONLY valid JSON: {"briefing_markdown": "The full formatted dialogue in Markdown..."}"""
+Rules: graph facts come from the deterministic engine summary below; do not invent them. Call instruments "graphical instrument candidates" and note that their validity is an assumption. Describe AI summaries of papers as unverified.
+Return ONLY valid JSON: {"briefing_markdown": "The full formatted dialogue in Markdown..."}
+
+""" + GUARD
 
     sources_text = "\n".join(
-        f"- {s.title} ({s.year}, {s.study_design}): {s.ai_summary.tldr if s.ai_summary else s.key_finding}"
+        wrap(s.id, "library_source", f"{s.title} ({s.year}, {s.study_design}): {s.ai_summary.tldr if s.ai_summary else s.key_finding}", 500)
         for s in project.sources[:8]
     )
     user_prompt = f"""Study: {project.title} ({project.discipline})
@@ -338,7 +370,7 @@ Question: {project.research_question}
 Exposure: {exp_lbl} -> Outcome: {out_lbl}
 Open Backdoor Paths: {len(open_bd)}
 Minimal Adjustment Sets: {min_sets}
-Valid Instruments: {ivs}
+Graphical instrument candidates (validity assumed, not verified): {[i.get("label") for i in ivs]}
 Saved Literature:
 {sources_text}
 """
@@ -384,7 +416,7 @@ Saved Literature:
             )
 
     script.append(
-        f"**👨‍🏫 Prof. Marcus Sterling:** Two final methodological reminders before we lock this protocol: first, never condition on any $t_2$ mediator when estimating the total effect, and watch out for $t_3$ colliders. Second, if Reviewer #2 argues there is residual unmeasured confounding ($U$), our candidate Instrumental Variable on the canvas is **{iv_str}**."
+        f"**👨‍🏫 Prof. Marcus Sterling:** Two final methodological reminders before we lock this protocol: first, never condition on any $t_2$ mediator when estimating the total effect, and watch out for $t_3$ colliders. Second, if Reviewer #2 argues there is residual unmeasured confounding ($U$), the graph offers **{iv_str}** as an instrument candidate. The graph only shows it is not ruled out: instrument strength and the exclusion restriction still have to be argued from subject knowledge."
     )
     return "\n\n".join(script)
 
@@ -448,11 +480,17 @@ def _normalize_agent_output(
             ed = p["edge"]
             src = str(ed.get("source", "")).strip()
             tgt = str(ed.get("target", "")).strip()
+            known = {x.id for x in project.sources} | {x.id for x in project.staged_sources} | {
+                x.id for x in fetched_papers if not x.injection_flags
+            }
+            cites = [str(c) for c in (ed.get("citation_ids") or []) if str(c) in known]
             if src and tgt and src != tgt:
                 edge_obj = CausalEdge(
                     source=src,
                     target=tgt,
-                    epistemic_status="ai_proposed",
+                    evidence_class="ai_hypothesis",
+                    origin="ai",
+                    citation_ids=cites,
                     mechanism=str(ed.get("mechanism", "")),
                     effect_direction=(
                         ed.get("effect_direction", "unknown")
@@ -460,7 +498,7 @@ def _normalize_agent_output(
                         in ("positive", "negative", "non_linear", "unknown")
                         else "unknown"
                     ),
-                    confidence=float(ed.get("confidence", 0.78)),
+                    confidence=0.5,
                     rationale=rationale,
                     approved_by_researcher=False,
                 )
@@ -477,11 +515,14 @@ def _normalize_agent_output(
                 )
             )
 
+    cited = {sid for p in proposals if p.edge for sid in p.edge.citation_ids}
+    stage = [fp for fp in fetched_papers if fp.id in cited]
     return {
-        "reply_markdown": raw.get("reply_markdown", ""),
-        "socratic_questions": (raw.get("socratic_questions") or [])[:4],
+        "reply_markdown": str(raw.get("reply_markdown", "")),
+        "socratic_questions": [str(q) for q in (raw.get("socratic_questions") or [])[:4]],
         "proposals": [p.model_dump() for p in proposals],
         "fetched_papers": [fp.model_dump() for fp in fetched_papers],
+        "staged_sources": [fp.model_dump() for fp in stage],
         "notebook_append_suggestion": raw.get("notebook_append_suggestion", ""),
         "agent_mode": agent_mode,
         "used_llm": used_llm,
@@ -512,9 +553,9 @@ def _run_deterministic_copilot(
     sections: List[str] = []
 
     if agent_mode == "topic_refiner":
-        sections.append("### 🎯 Research Topic Refiner & PICO / PECO Question Architect")
+        sections.append("### Turning the topic into a causal question")
         sections.append(
-            f"Let's narrow down your research interest (**\"{user_message}\"**) into a sharp, identifiable causal model using the **PECO** (*Population, Exposure, Comparator, Outcome*) and **FINER** frameworks:"
+            f"Let's turn **\"{user_message}\"** into a precise causal question. Whatever the field, a causal question needs a unit or population, an exposure or treatment, a comparator, an outcome, a time horizon and a target estimand. PICO (clinical interventions), PECO (epidemiological exposures), policy counterfactuals (economics) and interventions on a structural causal model (ML) are field-specific names for the same parts."
         )
         sections.append(
             f"1. **Candidate Formulation A (Total Effect Focus):**\n"
@@ -532,10 +573,10 @@ def _run_deterministic_copilot(
             )
             for idx, fp in enumerate(fetched_papers[:3]):
                 sections.append(
-                    f"- **{fp.title}** ({fp.year or 'n.d.'}, *{fp.journal}*, `{fp.study_design}`) — [Scholar]({fp.scholar_url}) | [CORE]({fp.core_url}) | [Sci-Hub]({fp.scihub_url})"
+                    f"- **{fp.title}** ({fp.year or 'n.d.'}, *{fp.journal}*, {fp.study_design})"
                 )
         questions = [
-            f"Which of the 3 formulations above best matches your available data: Observational Cohort Adjustment, Mediation Analysis, or Quasi-Experimental (IV / DiD)?",
+            "Which of the formulations above matches your data: covariate adjustment, mediation analysis, or a quasi-experimental design (IV, difference-in-differences, regression discontinuity)?",
             f"What is the exact time lag between your Exposure ({exp_label}) and Outcome ({out_label})?",
             "Who is the specific target population, and what are the inclusion/exclusion criteria (which could create collider bias)?",
         ]
@@ -603,12 +644,11 @@ def _run_deterministic_copilot(
                 cite_tag = format_in_text_citation(fp, project.citation_style, idx + 1)
                 tldr = fp.ai_summary.tldr if fp.ai_summary else fp.key_finding
                 sections.append(
-                    f"- **{fp.title}** {cite_tag} — *{fp.journal or 'Scholarly Source'}* (`{fp.source_engine}`) | **Design:** `{fp.study_design}`\n"
-                    f"  - **AI Digest:** {tldr}\n"
-                    f"  - **Access:** [Google Scholar]({fp.scholar_url}) • [CORE.ac.uk]({fp.core_url}) • [Sci-Hub Mirror]({fp.scihub_url})"
+                    f"- **{fp.title}** {cite_tag}, *{fp.journal or 'Scholarly source'}* ({fp.source_engine}). Design: {fp.study_design}.\n"
+                    f"  - Summary (unverified): {tldr}"
                 )
             sections.append(
-                "\nClick **+ Add to Study Vault** in the Left Pane (or run **🚀 Autonomous Deep Research**) to save and summarize these papers!"
+                "\nAdd the relevant papers to the library from the Sources panel, then link them to arrows and record whether each study establishes direction."
             )
         else:
             sections.append(
@@ -616,7 +656,7 @@ def _run_deterministic_copilot(
             )
         questions = [
             f"Do the empirical studies supporting '{exp_label} -> {out_label}' rely on cross-sectional associations or longitudinal/quasi-experimental designs?",
-            "Should we mark edges backed only by cross-sectional studies as `Hypothesized` rather than `Empirical`?",
+            "Should arrows backed only by cross-sectional studies stay classed as empirical associations rather than causal evidence?",
         ]
 
     elif agent_mode == "synthesis":
@@ -650,7 +690,7 @@ def _run_deterministic_copilot(
         for e in project.edges[:8]:
             u_name = node_lookup.get(e.source, e.source)
             v_name = node_lookup.get(e.target, e.target)
-            draft_md += f"- **{u_name} $\\rightarrow$ {v_name}** (`{e.epistemic_status}`): {e.mechanism or e.rationale or 'Hypothesized structural link.'}\n"
+            draft_md += f"- **{u_name} $\\rightarrow$ {v_name}** ({e.evidence_class.replace('_', ' ')}): {e.mechanism or e.rationale or 'Hypothesised structural link.'}\n"
 
         sections.append(draft_md)
         questions = [
@@ -728,7 +768,8 @@ def _run_deterministic_copilot(
                     edge=CausalEdge(
                         source=cand_id,
                         target=exp_id,
-                        epistemic_status="ai_proposed",
+                        evidence_class="ai_hypothesis",
+                        origin="ai",
                         mechanism=f"Direct or upstream influence of {candidate_concept} on {exp_label}",
                         approved_by_researcher=False,
                     ),
@@ -753,6 +794,7 @@ def _run_deterministic_copilot(
         "socratic_questions": questions,
         "proposals": [p.model_dump() for p in proposals],
         "fetched_papers": [fp.model_dump() for fp in fetched_papers],
+        "staged_sources": [],
         "notebook_append_suggestion": notebook_suggestion,
         "agent_mode": agent_mode,
         "used_llm": False,

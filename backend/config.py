@@ -95,7 +95,8 @@ def get_runtime_settings() -> Dict[str, Any]:
         "serpapi_api_key": os.getenv("SERPAPI_API_KEY", ""),
         "semantic_scholar_api_key": os.getenv("SEMANTIC_SCHOLAR_API_KEY", ""),
         "searxng_base_url": os.getenv("SEARXNG_BASE_URL", ""),
-        "scihub_mirror_url": os.getenv("SCIHUB_MIRROR_URL", "https://sci-hub.name"),
+        "ezproxy_prefix": os.getenv("EZPROXY_PREFIX", ""),
+        "offline_mode": os.getenv("OFFLINE_MODE", "").strip().lower() in ("1", "true", "yes", "on"),
         "scholarly_email": os.getenv("SCHOLARLY_CONTACT_EMAIL", "researcher@dagbrain.org"),
     }
     if SETTINGS_FILE.exists():
