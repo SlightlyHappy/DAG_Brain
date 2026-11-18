@@ -546,6 +546,7 @@
         <button class="icon-btn" type="button" data-close="settingsModal" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
       </header>
       <div class="dialog-body">
+        <p id="hostedNote" class="hosted-note hidden" role="note">This instance is hosted. Model keys, endpoints and privacy options are managed by the server, so this screen is read-only.</p>
         <fieldset class="fieldset">
           <legend>Model</legend>
           <div class="field">
@@ -802,6 +803,7 @@
       <footer class="dialog-foot">
         <a class="btn btn-ghost" href="https://github.com/SlightlyHappy/DAG_Brain/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
         <a class="btn btn-secondary" href="https://github.com/SlightlyHappy/DAG_Brain" target="_blank" rel="noopener noreferrer">View source</a>
+        <button id="btnSignOut" class="btn btn-ghost hidden" type="button">Sign out</button>
       </footer>
     </div>
   </dialog>

@@ -1431,3 +1431,5 @@ button.brand:hover { background: var(--surface-3); }
 .about-body p + p { margin-top: 10px; }
 .about-body a { color: var(--accent-text); }
 .about-credit { font-size: var(--fs-lg); font-weight: 500; }
+
+.hosted-note { margin-bottom: 14px; padding: 8px 10px; border-radius: var(--radius); background: var(--warn-soft); color: var(--text); font-size: var(--fs-sm); }

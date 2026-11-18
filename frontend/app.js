@@ -343,6 +343,8 @@ async function loadHealth() {
   try {
     const h = await api("/api/health");
     applyOffline(Boolean(h.offline_mode));
+    state.hosted = Boolean(h.hosted);
+    $("btnSignOut").classList.toggle("hidden", !h.auth);
   } catch (e) { applyOffline(false); }
 }
 
@@ -2614,6 +2616,9 @@ function bindUIEvents() {
     $("settingOffline").checked = Boolean(s.offline_mode);
     $("ollamaDetectedCount").textContent = (s.detected_ollama_models || []).length;
     populateModelPresets();
+    $("hostedNote").classList.toggle("hidden", !state.hosted);
+    $("settingsModal").querySelectorAll("input, select").forEach((el) => (el.disabled = state.hosted));
+    $("btnSaveSettings").disabled = state.hosted;
     openDialog("settingsModal");
   };
   $("settingProvider").addEventListener("change", () => {
@@ -2697,6 +2702,10 @@ function bindUIEvents() {
   };
 
   // Worldviews
+  $("btnSignOut").onclick = async () => {
+    await fetch("/api/logout", { method: "POST" });
+    location.replace("/login");
+  };
   $("btnAbout").onclick = async () => {
     try {
       const h = await api("/api/health");

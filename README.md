@@ -196,6 +196,7 @@ For a genuinely air-gapped deployment you must also control the host itself: no 
 - [ARCHITECTURE.md](ARCHITECTURE.md): layers, data model, algorithms and references.
 - [docs/VALIDATION.md](docs/VALIDATION.md): the validation study.
 - [docs/BENCHMARK.md](docs/BENCHMARK.md): AI-drafted DAGs against reference DAGs.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): sharing an instance with other people (sign-in, hardened container, reverse proxy or tunnel).
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to contribute.
 
 ## Contributing

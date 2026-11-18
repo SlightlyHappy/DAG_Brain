@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 SlightlyHappy. DAG Brain: https://github.com/SlightlyHappy/DAG_Brain
 # Created and maintained by SlightlyHappy. See NOTICE for the attribution terms.
+import asyncio
 import json
 import os
 import re
@@ -12,6 +13,7 @@ from typing import Dict, Any, Optional, List
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, FileResponse
 from starlette.routing import Route, Mount
@@ -48,6 +50,7 @@ from .schemas import (
 )
 from . import data_analysis as da
 from . import dag_eval
+from . import security
 from .net import offline_mode
 from .untrusted import scan
 from .validation import apply_proposal, intake_proposals, reject_proposal, validate_proposal
@@ -115,8 +118,19 @@ def _not_found(what: str = "Project") -> JSONResponse:
 async def health_check(request: Request) -> JSONResponse:
     return JSONResponse(
         {"status": "ok", "service": "DAG Brain", "version": __version__, "author": __author__,
-         "license": __license__, "source": __url__, "attribution": ATTRIBUTION, "offline_mode": offline_mode()}
+         "license": __license__, "source": __url__, "attribution": ATTRIBUTION, "offline_mode": offline_mode(),
+         "hosted": security.hosted(), "auth": security.auth_enabled()}
     )
+
+
+_HEAVY = asyncio.Semaphore(max(1, int(os.getenv("DAGBRAIN_MAX_JOBS", "2"))))
+
+
+async def run_heavy(fn, *args, **kwargs):
+    """Run CPU-heavy work (statistics, CSV and PDF parsing) off the event loop,
+    at most DAGBRAIN_MAX_JOBS at a time, so one analysis cannot freeze the app."""
+    async with _HEAVY:
+        return await run_in_threadpool(fn, *args, **kwargs)
 
 
 async def api_get_settings(request: Request) -> JSONResponse:
@@ -128,6 +142,11 @@ async def api_get_settings(request: Request) -> JSONResponse:
 
 
 async def api_update_settings(request: Request) -> JSONResponse:
+    if security.hosted():
+        return JSONResponse(
+            {"detail": "This instance is hosted: model keys, endpoints and privacy options are set by the server, not from the browser."},
+            status_code=403,
+        )
     updates = await request.json()
     clean_updates = {}
     for k, v in updates.items():
@@ -882,7 +901,7 @@ async def api_upload_pdf(request: Request) -> JSONResponse:
     path = folder / fname
     path.write_bytes(raw)
     try:
-        info = extract_pdf(str(path))
+        info = await run_heavy(extract_pdf, str(path))
     except Exception as exc:
         return JSONResponse({"detail": f"Could not read the PDF: {exc}"}, status_code=422)
     title = (form.get("title") or info["title"] or upload.filename or "Uploaded PDF").strip()
@@ -961,7 +980,7 @@ async def api_upload_dataset(request: Request) -> JSONResponse:
     path = folder / fname
     path.write_bytes(raw)
     try:
-        df = da.load_csv(path)
+        df = await run_heavy(da.load_csv, path)
     except Exception as exc:
         path.unlink(missing_ok=True)
         return JSONResponse({"detail": f"Could not read the CSV: {exc}"}, status_code=422)
@@ -969,7 +988,7 @@ async def api_upload_dataset(request: Request) -> JSONResponse:
         filename=upload.filename or fname,
         path=fname,
         n_rows=len(df),
-        columns=da.profile(df),
+        columns=await run_heavy(da.profile, df),
         mapping=da.auto_map(proj.nodes, list(df.columns)),
     )
     proj.datasets = [meta]  # one active dataset per study keeps analyses unambiguous
@@ -1021,9 +1040,9 @@ async def api_test_implications(request: Request) -> JSONResponse:
             {"a": eng._fmt_set([i["a"]])[0], "b": eng._fmt_set([i["b"]])[0], "given": eng._fmt_set(i["given"])}
             for i in cc.implied_independencies(eng.cg)
         ]
-    df = _load_df(proj, meta)
+    df = await run_heavy(_load_df, proj, meta)
     method = data.get("method", "auto") if data.get("method") in ("auto", "gcm", "partial_correlation") else "auto"
-    res = da.check_implications(df, meta.mapping, implications, method=method, alpha=float(data.get("alpha", 0.05)))
+    res = await run_heavy(da.check_implications, df, meta.mapping, implications, method=method, alpha=float(data.get("alpha", 0.05)))
     res["graph_version"] = proj.graph_version
     proj.audit_log.insert(0, AuditLogEntry(actor="researcher", action="Tested graph against data",
                                            details=f"{res['tested']} implications tested, {res['rejected']} rejected (Holm, alpha {res['alpha']})",
@@ -1057,9 +1076,9 @@ async def api_estimate(request: Request) -> JSONResponse:
     if unmapped:
         labels = {n.id: n.label for n in proj.nodes}
         return JSONResponse({"detail": "Map these variables to columns first: " + ", ".join(labels.get(v, v) for v in unmapped)}, status_code=409)
-    df = _load_df(proj, meta)
+    df = await run_heavy(_load_df, proj, meta)
     try:
-        res = da.estimate_effect(df, meta.mapping, x, y, adj)
+        res = await run_heavy(da.estimate_effect, df, meta.mapping, x, y, adj)
     except ValueError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=422)
     labels = {n.id: n.label for n in proj.nodes}
@@ -1091,6 +1110,9 @@ async def lifespan(app: Starlette):
 
 routes = [
     Route("/api/health", health_check, methods=["GET"]),
+    Route("/login", security.login_page, methods=["GET"]),
+    Route("/api/login", security.api_login, methods=["POST"]),
+    Route("/api/logout", security.api_logout, methods=["POST"]),
     Route("/api/settings", api_get_settings, methods=["GET"]),
     Route("/api/settings", api_update_settings, methods=["POST"]),
     Route("/api/projects", api_projects_collection, methods=["GET", "POST"]),
@@ -1120,15 +1142,18 @@ routes = [
     Mount("/static", app=StaticFiles(directory=str(FRONTEND_DIR)), name="static"),
 ]
 
-middleware = [
-    Middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+middleware = [Middleware(security.SecurityHeaders), Middleware(security.AuthGate)]
+if security.allowed_origins():
+    # Cross-site access is off unless origins are listed in DAGBRAIN_ORIGINS.
+    middleware.append(
+        Middleware(
+            CORSMiddleware,
+            allow_origins=security.allowed_origins(),
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_headers=["Content-Type"],
+        )
     )
-]
 
 app = Starlette(debug=False, routes=routes, middleware=middleware, lifespan=lifespan)
 

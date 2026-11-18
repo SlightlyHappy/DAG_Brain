@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 SlightlyHappy. DAG Brain: https://github.com/SlightlyHappy/DAG_Brain
+# Created and maintained by SlightlyHappy. See NOTICE for the attribution terms.
+#
+# Hardened compose file for sharing DAG Brain with a few invited people.
+# See docs/DEPLOYMENT.md. Run from the deploy/ directory with a .env next to it:
+#   cp env.hosted.example .env && chmod 600 .env   # then fill in the two secrets
+#   mkdir -p data && docker compose -f docker-compose.hosted.yml up -d --build
+services:
+  dagbrain:
+    build:
+      context: ..
+    image: dagbrain:local
+    container_name: dagbrain
+    restart: unless-stopped
+    # Published on the loopback interface only: a reverse proxy or tunnel on the
+    # same machine is the single way in.
+    ports:
+      - "127.0.0.1:${DAGBRAIN_HOST_PORT:-8010}:8000"
+    env_file: .env
+    environment:
+      DAGBRAIN_HOSTED: "1"
+      DAGBRAIN_MAX_JOBS: "2"
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
