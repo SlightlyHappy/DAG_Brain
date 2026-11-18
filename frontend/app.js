@@ -22,6 +22,8 @@ const state = {
   focusNodeAfterRender: false,
   matrixSort: { key: "strength", dir: -1 },
   speaking: false,
+  dataResults: { implications: null, estimate: null },
+  offline: false,
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -34,7 +36,8 @@ const LANES = [
   { t: "t₂", label: "Mediators" },
   { t: "t₃", label: "Outcome" },
 ];
-const VIEW_MODES = ["canvas", "split", "notebook", "matrix", "briefing", "audit"];
+const VIEW_MODES = ["canvas", "split", "notebook", "matrix", "data", "briefing", "audit"];
+const FONT_HREF = "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap";
 
 const ROLE_LABELS = {
   exposure: "Exposure",
@@ -46,16 +49,41 @@ const ROLE_LABELS = {
   effect_modifier: "Modifier",
   competing_exposure: "Competing exposure",
   latent: "Unobserved",
+  descendant_of_outcome: "Descendant of the outcome",
+  descendant_of_exposure: "Descendant of the exposure",
   other: "Variable",
 };
 
-const STATUS_LABELS = {
-  empirical: "Cited evidence",
-  hypothesized: "Hypothesised",
-  contested: "Contested",
-  ai_proposed: "AI proposed",
-  bidirectional_confounded: "Shared latent cause",
+const EVIDENCE_LABELS = {
+  experimental: "Experimental evidence",
+  quasi_experimental: "Quasi-experimental evidence",
+  empirical_association: "Empirical association",
+  mechanistic: "Mechanistic evidence",
+  author_hypothesis: "Author hypothesis",
+  researcher_hypothesis: "Researcher hypothesis",
+  ai_hypothesis: "AI hypothesis",
 };
+const EVIDENCE_HELP = {
+  experimental: "Investigated through an intervention, such as a randomised trial.",
+  quasi_experimental: "Causal inference from a quasi-experimental design (IV, DiD, RDD, MR). Valid only under that design's assumptions.",
+  empirical_association: "An observed statistical relationship. It does not establish direction or rule out confounding.",
+  mechanistic: "Evidence for a plausible mechanism, not for the size of the effect.",
+  author_hypothesis: "Proposed by the authors of a paper, not tested there.",
+  researcher_hypothesis: "Your own assumption.",
+  ai_hypothesis: "Proposed by the assistant. Reclassify it once you have assessed the evidence.",
+};
+const ASSESSMENTS = { not_assessed: "Not assessed", supports: "Supports", weakly_supports: "Weakly supports", contradicts: "Contradicts" };
+const DIRECTIONALITY = { unclear: "Direction unclear", established: "Direction established", not_established: "Direction not established" };
+
+/** Visual category for an arrow, from strongest to weakest evidence. */
+function edgeCategory(e) {
+  if (e.edge_type === "bidirected") return "bi";
+  if (e.contested) return "contested";
+  if (e.evidence_class === "experimental" || e.evidence_class === "quasi_experimental") return "causal";
+  if (e.evidence_class === "empirical_association" || e.evidence_class === "mechanistic") return "assoc";
+  if (e.evidence_class === "ai_hypothesis") return "ai";
+  return "hyp";
+}
 
 const PROVIDER_LABELS = {
   openrouter: "OpenRouter",
@@ -293,6 +321,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initPanels();
   bindUIEvents();
   setPersona("socratic");
+  loadHealth();
   loadSettings(); // runs alongside the study load; Ollama detection can be slow
   try {
     await loadProjectsList();
@@ -300,6 +329,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     reportError("Could not load studies", err);
   }
 });
+
+async function loadHealth() {
+  try {
+    const h = await api("/api/health");
+    applyOffline(Boolean(h.offline_mode));
+  } catch (e) { applyOffline(false); }
+}
+
+/** Web fonts are fetched only outside local-only mode; otherwise system fonts are used. */
+function applyOffline(on) {
+  state.offline = on;
+  $("offlineBadge").classList.toggle("hidden", !on);
+  if (!on && !document.getElementById("webFonts")) {
+    const l = document.createElement("link");
+    l.id = "webFonts";
+    l.rel = "stylesheet";
+    l.href = FONT_HREF;
+    document.head.appendChild(l);
+  }
+}
 
 async function loadSettings() {
   try {
@@ -358,9 +407,11 @@ async function loadProjectsList(selectId = null) {
 async function loadProject(projectId) {
   const proj = await api(`/api/projects/${projectId}`);
   store("dagbrain.project", projectId);
+  $("projectSelect").value = projectId;
   state.selectedNodeId = null;
   state.selectedEdgeId = null;
   state.lastChatLen = -1;
+  state.dataResults = { implications: null, estimate: null };
   stopSpeech();
   setProjectState(proj);
   requestAnimationFrame(fitView);
@@ -382,10 +433,13 @@ function setProjectState(proj) {
   renderInspector();
   renderNotebook();
   renderEvidenceMatrix();
+  renderDataView();
+  renderQuestion();
   renderLabBriefing();
   renderAuditLog();
   renderProposals();
   renderChat();
+  if (typeof proj.offline_mode === "boolean" && proj.offline_mode !== state.offline) applyOffline(proj.offline_mode);
 }
 
 function setSaveStatus(text, isError = false) {
@@ -499,12 +553,22 @@ function srcLinksHtml(src) {
   const add = (href, label, title) => {
     if (href) links.push(`<a class="ext-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}">${label}${icon("external")}</a>`);
   };
-  add(src.pdf_url, "PDF", "Open the PDF");
-  add(src.doi ? `https://doi.org/${src.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//, "")}` : "", "DOI", "Open the publisher page");
-  add(src.core_url, "CORE", "Open-access copy on CORE");
+  const pid = state.currentProject?.id;
+  if (src.local_pdf && pid) add(`/api/projects/${pid}/sources/${src.id}/pdf`, "Your PDF", "Open the PDF you uploaded");
+  add(src.oa_url, "Open access", "Legal open-access copy");
+  add(src.pdf_url && src.pdf_url !== src.oa_url ? src.pdf_url : "", "PDF", "Open the PDF");
+  add(src.doi ? `https://doi.org/${src.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//, "")}` : "", "DOI", "Publisher page");
+  add(src.europepmc_url, "Europe PMC", "Europe PMC record");
+  add(src.proxy_url, "Library", "Through your institutional proxy");
+  add(src.core_url, "CORE", "Search CORE for an open-access copy");
   add(src.scholar_url, "Scholar", "Find on Google Scholar");
-  add(src.scihub_url, "Mirror", "Open with your configured full-text resolver");
   return links.length ? `<div class="src-links">${links.join("")}</div>` : "";
+}
+
+function flagsHtml(src) {
+  const f = src.injection_flags || [];
+  if (!f.length) return "";
+  return `<div class="src-flags" role="note">${icon("alert")}<span><strong>Instruction-like text found</strong> (${escapeHtml(f.join("; "))}). It is treated as data only and excluded from automatic proposals.</span></div>`;
 }
 
 function digestHtml(src, withRefresh) {
@@ -513,16 +577,27 @@ function digestHtml(src, withRefresh) {
   if (!hasAi && !withRefresh) return "";
   const claims = s.causal_claims || [];
   const controls = s.confounders_controlled || [];
+  const byAi = s.extracted_by !== "heuristic";
+  const head = byAi ? "AI summary" : "Keyword summary";
+  const dirPill = s.directionality === "established" ? "pill-ok" : s.directionality === "not_established" ? "pill-bad" : "pill-warn";
   return `
     <details class="digest">
-      <summary>${icon("sparkle")}<span>AI summary</span>${s.methodology_grade ? `<span class="digest-grade">${escapeHtml(s.methodology_grade)}</span>` : ""}${icon("chevron-down", "chev")}</summary>
+      <summary>${icon("sparkle")}<span>${head}</span><span class="digest-grade">${s.verified ? "verified by you" : "unverified"}</span>${icon("chevron-down", "chev")}</summary>
       <div class="digest-body">
         ${hasAi ? "" : `<p class="muted">No summary yet. Generate one from the abstract and metadata.</p>`}
+        <div class="row gap-1" style="flex-wrap:wrap">
+          <span class="pill ${dirPill}">${escapeHtml(DIRECTIONALITY[s.directionality] || "Direction unclear")}</span>
+          ${s.methodology_grade ? `<span class="pill">${escapeHtml(s.methodology_grade)}</span>` : ""}
+        </div>
         ${s.tldr ? `<div><span class="digest-k">In short</span>${escapeHtml(s.tldr)}</div>` : ""}
-        ${claims.length ? `<div><span class="digest-k">Causal claims</span><ul>${claims.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul></div>` : ""}
-        ${controls.length ? `<div><span class="digest-k">Controls for</span>${controls.map(escapeHtml).join(", ")}</div>` : ""}
-        ${s.limitations_and_bias ? `<div class="digest-limit"><span class="digest-k">Limitations and bias</span>${escapeHtml(s.limitations_and_bias)}</div>` : ""}
-        ${withRefresh ? `<div class="digest-foot"><button class="btn btn-ghost btn-xs btn-ai-resummarize" data-id="${escapeHtml(src.id)}" type="button">${icon("refresh")}${hasAi ? "Regenerate" : "Generate summary"}</button></div>` : ""}
+        ${s.population ? `<div><span class="digest-k">Population</span>${escapeHtml(s.population)}</div>` : ""}
+        ${claims.length ? `<div><span class="digest-k">Reported relationships</span><ul>${claims.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul></div>` : ""}
+        ${controls.length ? `<div><span class="digest-k">Adjusted for (as reported)</span>${controls.map(escapeHtml).join(", ")}</div>` : ""}
+        ${s.limitations_and_bias ? `<div class="digest-limit"><span class="digest-k">${byAi ? "Limitations and bias" : "Design caveat"}</span>${escapeHtml(s.limitations_and_bias)}</div>` : ""}
+        ${withRefresh ? `<div class="digest-verify">
+            <label class="check-inline"><input type="checkbox" class="chk-verify" data-id="${escapeHtml(src.id)}" ${s.verified ? "checked" : ""} ${hasAi ? "" : "disabled"} />I checked this against the paper</label>
+            <button class="btn btn-ghost btn-xs btn-ai-resummarize" data-id="${escapeHtml(src.id)}" type="button">${icon("refresh")}${hasAi ? "Regenerate" : "Generate"}</button>
+          </div>` : ""}
       </div>
     </details>`;
 }
@@ -565,6 +640,7 @@ function renderVault() {
         <p class="src-meta">${srcMetaHtml(src)}</p>
         ${evidenceHtml(src)}
         ${src.key_finding && !(src.ai_summary && src.ai_summary.tldr) ? `<p class="src-finding" title="Show more">${escapeHtml(src.key_finding)}</p>` : ""}
+        ${flagsHtml(src)}
         ${digestHtml(src, true).replace('<details class="digest">', `<details class="digest" data-id="${escapeHtml(src.id)}"${openDigests.has(src.id) ? " open" : ""}>`)}
         ${srcLinksHtml(src)}
         <div class="src-foot">
@@ -572,6 +648,7 @@ function renderVault() {
           <div class="src-actions">
             <button class="btn btn-ghost btn-xs btn-cite-nb" data-id="${escapeHtml(src.id)}" type="button" title="Insert this citation into the notebook">${icon("quote")}Cite</button>
             <button class="btn btn-ghost btn-xs btn-digest-nb" data-id="${escapeHtml(src.id)}" type="button" title="Add this paper's summary and citation to the notebook">${icon("notebook-plus")}Summary</button>
+            ${src.doi && !src.oa_url && !state.offline ? `<button class="btn btn-ghost btn-xs btn-find-oa" data-id="${escapeHtml(src.id)}" type="button" title="Look for a legal open-access copy (Unpaywall)">${icon("search")}Open access</button>` : ""}
             ${selectedEdge ? `<button class="btn ${linked ? "btn-ok" : "btn-secondary"} btn-xs btn-cite-edge" data-id="${escapeHtml(src.id)}" type="button" aria-pressed="${linked}">${icon(linked ? "check" : "link")}${linked ? "Linked" : "Link"}</button>` : ""}
           </div>
         </div>
@@ -580,6 +657,30 @@ function renderVault() {
     .join("");
 
   listEl.querySelectorAll(".src-finding").forEach((p) => p.addEventListener("click", () => p.classList.toggle("is-open")));
+
+  listEl.querySelectorAll(".chk-verify").forEach((chk) => {
+    chk.addEventListener("change", async () => {
+      const src = state.currentProject.sources.find((x) => x.id === chk.dataset.id);
+      if (!src || !src.ai_summary) return;
+      src.ai_summary.verified = chk.checked;
+      await saveCurrentProject(chk.checked ? "Verified paper summary" : "Marked summary unverified", `'${src.title}'`).catch(() => {});
+    });
+  });
+
+  listEl.querySelectorAll(".btn-find-oa").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      setLoading(btn, true);
+      try {
+        const updated = await api(`/api/projects/${proj.id}/sources/${btn.dataset.id}/open-access`, { method: "POST" });
+        setProjectState(updated);
+        const src = updated.sources.find((x) => x.id === btn.dataset.id);
+        toast(src && src.oa_url ? "Open-access copy found" : "No open-access copy found. Add a contact email in settings if you have not.");
+      } catch (err) {
+        setLoading(btn, false);
+        reportError("Open-access lookup failed", err);
+      }
+    });
+  });
 
   listEl.querySelectorAll(".btn-ai-resummarize").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -648,19 +749,29 @@ function renderVault() {
       if (!state.selectedEdgeId) return;
       const edge = state.currentProject.edges.find((e) => e.id === state.selectedEdgeId);
       if (!edge) return;
-      edge.citation_ids = edge.citation_ids || [];
+      edge.evidence_links = edge.evidence_links || [];
       const sid = btn.dataset.id;
-      const removing = edge.citation_ids.includes(sid);
+      const removing = edge.evidence_links.some((l) => l.source_id === sid);
       if (removing) {
-        edge.citation_ids = edge.citation_ids.filter((id) => id !== sid);
+        edge.evidence_links = edge.evidence_links.filter((l) => l.source_id !== sid);
       } else {
-        edge.citation_ids.push(sid);
-        edge.epistemic_status = "empirical";
+        const src = state.currentProject.sources.find((x) => x.id === sid) || {};
+        const sum = src.ai_summary || {};
+        edge.evidence_links.push({
+          source_id: sid,
+          design: src.study_design || "",
+          population: sum.population || "",
+          directionality: sum.directionality || "unclear",
+          limitations: sum.limitations_and_bias || "",
+          researcher_assessment: "not_assessed",
+          extracted_by: sum.extracted_by === "ai" ? "ai" : "researcher",
+        });
       }
+      edge.citation_ids = edge.evidence_links.map((l) => l.source_id);
       await saveCurrentProject(
         removing ? "Unlinked edge evidence" : "Linked edge evidence",
-        `${removing ? "Removed" : "Linked"} citation ${sid} ${removing ? "from" : "to"} edge ${edge.source}->${edge.target}`
-      ).catch(() => {});
+        `${removing ? "Removed" : "Linked"} source ${sid} ${removing ? "from" : "to"} edge ${edge.source}->${edge.target}`
+      ).then(() => { if (!removing) toast("Linked. Assess the study in the arrow's inspector."); }).catch(() => {});
     });
   });
 
@@ -710,6 +821,7 @@ function renderLiveLitResults(query = null) {
         <p class="src-meta">${srcMetaHtml(r)}</p>
         ${evidenceHtml(r)}
         ${tldr ? `<p class="src-finding">${escapeHtml(tldr)}</p>` : ""}
+        ${flagsHtml(r)}
         ${srcLinksHtml(r)}
         <div class="src-foot">
           <span></span>
@@ -824,7 +936,9 @@ function renderDiagnostics() {
     }
     const ivs = diag.instrumental_variables || [];
     if (ivs.length > 0) {
-      html += `<span class="adj-iv">Instruments: <strong>${ivs.map((i) => escapeHtml(i.label)).join(", ")}</strong></span>`;
+      html += `<span class="adj-iv" title="${escapeHtml((diag.identification || {}).instrument_note || "")}">Instrument candidates: <strong>${ivs
+        .map((i) => escapeHtml(i.label) + (i.conditional_on && i.conditional_on.length ? ` (given ${i.conditional_on.map((w) => escapeHtml(w.label)).join(", ")})` : ""))
+        .join(", ")}</strong></span>`;
     }
   }
   adjSummary.innerHTML = html;
@@ -879,6 +993,8 @@ function renderDiagnostics() {
     (diag.paths || []).map((p) => pathItem(p, `<span class="path-state ${p.is_open ? "is-open" : "is-blocked"}">${p.is_open ? "Open" : "Blocked"}</span>`)).join("") ||
     `<div class="path-none">No paths between exposure and outcome.</div>`;
 
+  renderTiers(diag);
+
   $("pathsDrawer").querySelectorAll(".path-item").forEach((el) => {
     const on = () => highlightPath(el.dataset.nodes ? el.dataset.nodes.split(",") : []);
     el.addEventListener("mouseenter", on);
@@ -886,6 +1002,26 @@ function renderDiagnostics() {
     el.addEventListener("mouseleave", clearHighlight);
     el.addEventListener("blur", clearHighlight);
   });
+}
+
+function renderTiers(diag) {
+  const idn = diag.identification || {};
+  const sup = diag.scientific_support || { edges: [] };
+  const weak = (sup.edges || []).filter((r) => r.weak);
+  const strong = (sup.edges || []).filter((r) => !r.weak);
+  $("tiersPanel").innerHTML = `
+    <div class="tier">
+      <h4 class="subhead">What identification assumes</h4>
+      <div class="tier-meta">${escapeHtml(idn.criterion || "Not computed")}${idn.search_complete === false ? ". Set search stopped early on a large graph." : ""}</div>
+      <ul>${(idn.assumes || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("") || "<li>Mark an exposure and an outcome first.</li>"}</ul>
+    </div>
+    <div class="tier">
+      <h4 class="subhead">How well the arrows are supported <span class="count">${weak.length}/${sup.total || 0} weak</span></h4>
+      <div class="tier-meta">${escapeHtml(sup.note || "")}</div>
+      ${weak.map((r) => `<div class="support-row"><span class="edge-name">${escapeHtml(prettyPath(r.edge))}</span><span class="pill ${r.evidence_class === "ai_hypothesis" ? "pill-warn" : ""}">${escapeHtml(EVIDENCE_LABELS[r.evidence_class] || r.evidence_class)}</span><span class="why">${escapeHtml(r.weak_reasons.join("; "))}</span></div>`).join("")}
+      ${strong.map((r) => `<div class="support-row"><span class="edge-name">${escapeHtml(prettyPath(r.edge))}</span><span class="pill pill-ok">${escapeHtml(EVIDENCE_LABELS[r.evidence_class] || r.evidence_class)}</span><span class="why">${r.researcher_supported_links} supporting source(s)</span></div>`).join("")}
+      ${!(sup.edges || []).length ? `<div class="muted">No arrows to grade yet.</div>` : ""}
+    </div>`;
 }
 
 function highlightPath(nodeIds) {
@@ -1056,8 +1192,8 @@ function renderCanvas() {
     const u = nodeMap[edge.source];
     const v = nodeMap[edge.target];
     if (!u || !v) return;
-    const status = STATUS_LABELS[edge.epistemic_status] ? edge.epistemic_status : "hypothesized";
-    const bi = status === "bidirectional_confounded";
+    const status = edgeCategory(edge);
+    const bi = status === "bi";
     const reverse = pairKeys.has(`${edge.target}|${edge.source}`);
     const dx = v.x - u.x;
     const dy = v.y - u.y;
@@ -1071,7 +1207,7 @@ function renderCanvas() {
 
     const g = svgEl("g", { "data-id": edge.id, "data-src": edge.source, "data-tgt": edge.target }, `dag-edge e-${status} ${state.selectedEdgeId === edge.id ? "selected" : ""}`);
     const title = svgEl("title");
-    title.textContent = `${u.label} → ${v.label}: ${STATUS_LABELS[status]}${edge.mechanism ? `. ${edge.mechanism}` : ""}`;
+    title.textContent = `${u.label} ${bi ? "↔" : "→"} ${v.label}: ${bi ? "shared latent cause" : EVIDENCE_LABELS[edge.evidence_class] || ""}${edge.contested ? " (contested)" : ""}${edge.mechanism ? `. ${edge.mechanism}` : ""}`;
     const marker = state.selectedEdgeId === edge.id ? "url(#arrow-hl)" : `url(#arrow-${status})`;
     const line = svgEl("path", { d, "marker-end": marker, "data-marker": marker }, "edge-line");
     if (bi) line.setAttribute("marker-start", marker);
@@ -1284,11 +1420,15 @@ async function handleConnectClick(nodeId) {
     id,
     source,
     target,
-    epistemic_status: "hypothesized",
+    edge_type: "directed",
+    evidence_class: "researcher_hypothesis",
+    contested: false,
     mechanism: "",
     effect_direction: "unknown",
     confidence: 0.75,
+    evidence_links: [],
     citation_ids: [],
+    origin: "researcher",
     rationale: "Drawn by researcher on canvas",
     approved_by_researcher: true,
   });
@@ -1475,28 +1615,49 @@ function renderInspector() {
   if (!edge) { panel.classList.add("hidden"); return; }
   panel.dataset.for = edge.id;
   panel.classList.remove("hidden");
-  const n = (edge.citation_ids || []).length;
+  const sources = proj.formatted_sources || proj.sources || [];
+  const links = edge.evidence_links || [];
+  const linkRows = links
+    .map((l, i) => {
+      const src = sources.find((x) => x.id === l.source_id) || { title: l.source_id };
+      return `
+      <div class="ev-link" data-i="${i}">
+        <div class="ev-link-title">${escapeHtml(src.title)}</div>
+        <div class="ev-link-meta">${escapeHtml(src.in_text || "")}${l.design ? `, ${escapeHtml(l.design)}` : ""}${l.population ? `, ${escapeHtml(l.population)}` : ""}${l.extracted_by === "ai" ? ", details pre-filled by AI" : ""}</div>
+        <div class="field-row">
+          <div class="field grow"><label for="evA${i}">Your assessment</label>
+            <select id="evA${i}" class="select ev-assess">${Object.entries(ASSESSMENTS).map(([k, v]) => option(k, v, l.researcher_assessment)).join("")}</select></div>
+          <div class="field grow"><label for="evD${i}">Direction</label>
+            <select id="evD${i}" class="select ev-dir">${Object.entries(DIRECTIONALITY).map(([k, v]) => option(k, v, l.directionality)).join("")}</select></div>
+        </div>
+      </div>`;
+    })
+    .join("");
   panel.innerHTML = `
     <div class="insp-head">
       <div class="grow">
-        <div class="insp-kicker">Arrow</div>
-        <div class="insp-title">${escapeHtml(nodeLabel(edge.source))}<span class="arrow">→</span>${escapeHtml(nodeLabel(edge.target))}</div>
+        <div class="insp-kicker">${edge.origin === "ai" ? "Arrow, proposed by the assistant" : "Arrow"}</div>
+        <div class="insp-title">${escapeHtml(nodeLabel(edge.source))}<span class="arrow">${edge.edge_type === "bidirected" ? "↔" : "→"}</span>${escapeHtml(nodeLabel(edge.target))}</div>
       </div>
       <button class="icon-btn icon-btn-sm" id="btnCloseInspector" type="button" aria-label="Close inspector">${icon("x")}</button>
     </div>
     <div class="insp-body">
+      <div class="field">
+        <label for="inspEdgeType">Type</label>
+        <select id="inspEdgeType" class="select">
+          ${option("directed", "Causal effect (→)", edge.edge_type)}
+          ${option("bidirected", "Shared unmeasured cause (↔)", edge.edge_type)}
+        </select>
+      </div>
+      <div class="field">
+        <label for="inspEdgeClass">Evidence class</label>
+        <select id="inspEdgeClass" class="select">
+          ${Object.entries(EVIDENCE_LABELS).map(([k, v]) => option(k, v, edge.evidence_class)).join("")}
+        </select>
+        <p class="help" id="inspEdgeClassHelp">${escapeHtml(EVIDENCE_HELP[edge.evidence_class] || "")}</p>
+      </div>
       <div class="field-row">
         <div class="field grow">
-          <label for="inspEdgeStatus">Evidence</label>
-          <select id="inspEdgeStatus" class="select">
-            ${option("empirical", "Cited evidence", edge.epistemic_status)}
-            ${option("hypothesized", "Hypothesised", edge.epistemic_status)}
-            ${option("contested", "Contested", edge.epistemic_status)}
-            ${edge.epistemic_status === "ai_proposed" ? option("ai_proposed", "AI proposed", edge.epistemic_status) : ""}
-            ${option("bidirectional_confounded", "Shared latent cause (↔)", edge.epistemic_status)}
-          </select>
-        </div>
-        <div class="field" style="width:112px;flex:none">
           <label for="inspEdgeSign">Effect sign</label>
           <select id="inspEdgeSign" class="select">
             ${option("positive", "Positive (+)", edge.effect_direction)}
@@ -1506,25 +1667,39 @@ function renderInspector() {
           </select>
         </div>
       </div>
-      <div class="field">
+      <label class="check-inline"><input type="checkbox" id="inspEdgeContested" ${edge.contested ? "checked" : ""} />Contested: studies disagree about this arrow</label>
+      <div class="field" style="margin-top:12px">
         <label for="inspEdgeMech">Mechanism</label>
         <textarea id="inspEdgeMech" class="input" rows="3" placeholder="The biological, economic or behavioural process behind this arrow">${escapeHtml(edge.mechanism || "")}</textarea>
       </div>
-      <div class="insp-note">${icon("link")}<span>${n ? `${n} linked source${n > 1 ? "s" : ""}. ` : "No linked sources. "}Use Link on any source in the Sources panel to attach evidence.</span></div>
+      <div class="ev-links">
+        <div class="ev-links-head">Evidence (${links.length})</div>
+        ${linkRows || `<div class="insp-note" style="margin-top:0">${icon("link")}<span>No linked sources. Use Link on a source in the Sources panel, then record whether it supports this arrow and establishes its direction.</span></div>`}
+      </div>
     </div>
     <div class="insp-foot">
       <button id="btnDeleteEdge" class="btn btn-danger btn-sm" type="button" title="Delete (Del)">${icon("trash")}Delete</button>
-      <button id="btnFlipEdge" class="btn btn-ghost btn-sm" type="button" title="Reverse the arrow">${icon("swap")}Reverse</button>
+      <button id="btnFlipEdge" class="btn btn-ghost btn-sm" type="button" title="Reverse the arrow" ${edge.edge_type === "bidirected" ? "disabled" : ""}>${icon("swap")}Reverse</button>
       <span class="spacer"></span>
       <button id="btnSaveEdge" class="btn btn-primary btn-sm" type="button">Save</button>
     </div>`;
 
+  $("inspEdgeClass").addEventListener("change", (ev) => ($("inspEdgeClassHelp").textContent = EVIDENCE_HELP[ev.target.value] || ""));
   $("btnCloseInspector").onclick = clearSelection;
   $("btnSaveEdge").onclick = async () => {
-    edge.epistemic_status = $("inspEdgeStatus").value;
+    edge.edge_type = $("inspEdgeType").value;
+    edge.evidence_class = $("inspEdgeClass").value;
+    edge.contested = $("inspEdgeContested").checked;
     edge.effect_direction = $("inspEdgeSign").value;
     edge.mechanism = $("inspEdgeMech").value.trim();
-    await saveCurrentProject("Updated edge provenance", `Updated edge ${edge.source} -> ${edge.target}`).then(() => toast("Arrow saved")).catch(() => {});
+    panel.querySelectorAll(".ev-link").forEach((row) => {
+      const l = edge.evidence_links[Number(row.dataset.i)];
+      if (!l) return;
+      l.researcher_assessment = row.querySelector(".ev-assess").value;
+      l.directionality = row.querySelector(".ev-dir").value;
+    });
+    if (edge.origin === "ai" && edge.evidence_class !== "ai_hypothesis") edge.origin = "researcher";
+    await saveCurrentProject("Updated edge evidence", `Edge ${edge.source} -> ${edge.target}: ${edge.evidence_class}${edge.contested ? ", contested" : ""}`).then(() => toast("Arrow saved")).catch(() => {});
   };
   $("btnFlipEdge").onclick = async () => {
     const snap = graphSnapshot();
@@ -1815,38 +1990,78 @@ function renderAuditLog() {
 // ASSISTANT: PROPOSALS, CHAT, RESEARCH
 // ============================================================================
 
+function diffHtml(v) {
+  const d = v && v.diff;
+  if (!d) return "";
+  const sets = (x) => (x.sets && x.sets.length ? x.sets.map((ss) => `{${ss.join(", ") || "∅"}}`).join(" or ") : "none");
+  const lines = [];
+  lines.push(`<span class="${d.identifiability_changes ? "changed" : ""}">Identifiable by adjustment: ${d.before.identifiable ? "yes" : "no"} → ${d.after.identifiable ? "yes" : "no"}</span>`);
+  if (d.adjustment_sets_change) lines.push(`<span class="changed">Adjustment sets: ${escapeHtml(sets(d.before))} → ${escapeHtml(sets(d.after))}</span>`);
+  if (d.current_set_validity_changes) lines.push(`<span class="changed">Your current adjustment would become ${d.after.current_valid ? "valid" : "invalid"}</span>`);
+  if (!d.identifiability_changes && !d.adjustment_sets_change && !d.current_set_validity_changes) lines.push("<span>No change to identification</span>");
+  return `<div class="proposal-diff">${lines.join("")}</div>`;
+}
+
 function renderProposals() {
   const proj = state.currentProject;
   if (!proj) return;
-  const pending = (proj.proposals || []).filter((p) => p.status === "pending");
+  const open = (proj.proposals || []).filter((p) => p.status === "pending" || p.status === "invalid");
+  const staged = proj.staged_sources || [];
   const container = $("proposalsContainer");
   const list = $("proposalsList");
-  $("pendingProposalCount").textContent = pending.length;
-  if (pending.length === 0) {
+  $("pendingProposalCount").textContent = open.length + staged.length;
+  if (!open.length && !staged.length) {
     container.classList.add("hidden");
     list.innerHTML = "";
     return;
   }
   container.classList.remove("hidden");
-  list.innerHTML = pending
-    .map(
-      (p) => `
-      <article class="proposal">
-        <div class="proposal-kind">${escapeHtml(PROPOSAL_KINDS[p.action] || "Proposed change")}</div>
-        <div class="proposal-title">${escapeHtml(stripEmoji(p.title))}</div>
-        ${p.rationale ? `<p class="proposal-rationale">${escapeHtml(p.rationale)}</p>` : ""}
-        ${p.critic_warning ? `<div class="proposal-warning">${icon("alert")}<span>${escapeHtml(stripEmoji(p.critic_warning))}</span></div>` : ""}
-        <div class="proposal-actions">
-          <button class="btn btn-ghost btn-xs btn-prop-decide" data-id="${escapeHtml(p.id)}" data-dec="reject" type="button">Reject</button>
-          <button class="btn btn-primary btn-xs btn-prop-decide" data-id="${escapeHtml(p.id)}" data-dec="accept" type="button">${icon("check")}Accept</button>
-        </div>
-      </article>`
-    )
-    .join("");
+  const sourceTitle = (sid) => (staged.find((x) => x.id === sid) || (proj.sources || []).find((x) => x.id === sid) || {}).title;
+  list.innerHTML =
+    open
+      .map((p) => {
+        const v = p.validation || {};
+        const invalid = p.status === "invalid";
+        const cites = p.edge && p.edge.citation_ids && p.edge.citation_ids.length
+          ? `<div class="proposal-diff"><span>Evidence: ${p.edge.citation_ids.map((sid) => escapeHtml(sourceTitle(sid) || sid)).join("; ")}${p.edge.citation_ids.some((sid) => staged.some((x) => x.id === sid)) ? " (staged; enters the library if you accept)" : ""}</span></div>`
+          : "";
+        return `
+        <article class="proposal ${invalid ? "is-invalid" : ""}">
+          <div class="proposal-kind">${escapeHtml(PROPOSAL_KINDS[p.action] || "Proposed change")}${p.edge ? ", AI hypothesis" : ""}</div>
+          <div class="proposal-title">${escapeHtml(stripEmoji(p.title))}</div>
+          ${p.rationale ? `<p class="proposal-rationale">${escapeHtml(p.rationale)}</p>` : ""}
+          ${p.critic_warning ? `<div class="proposal-warning">${icon("alert")}<span>${escapeHtml(stripEmoji(p.critic_warning))}</span></div>` : ""}
+          ${invalid ? `<div class="proposal-errors"><strong>Cannot be applied:</strong> ${escapeHtml((v.errors || []).join(" "))}</div>` : diffHtml(v)}
+          ${(v.warnings || []).length ? `<div class="proposal-diff"><span class="changed">${escapeHtml(v.warnings.join(" "))}</span></div>` : ""}
+          ${cites}
+          <div class="proposal-actions">
+            <button class="btn btn-ghost btn-xs btn-prop-decide" data-id="${escapeHtml(p.id)}" data-dec="reject" type="button">${invalid ? "Dismiss" : "Reject"}</button>
+            ${invalid ? "" : `<button class="btn btn-primary btn-xs btn-prop-decide" data-id="${escapeHtml(p.id)}" data-dec="accept" type="button">${icon("check")}Accept</button>`}
+          </div>
+        </article>`;
+      })
+      .join("") +
+    staged
+      .map(
+        (src) => `
+        <article class="proposal staged-src">
+          <div class="proposal-kind">Source found by research, not yet in your library</div>
+          <div class="proposal-title">${escapeHtml(src.title)}</div>
+          <p class="proposal-rationale">${srcMetaHtml(src)}</p>
+          ${evidenceHtml(src)}
+          ${flagsHtml(src)}
+          ${(src.ai_summary && src.ai_summary.tldr) ? `<p class="proposal-rationale">AI summary, unverified: ${escapeHtml(src.ai_summary.tldr)}</p>` : ""}
+          <div class="proposal-actions">
+            <button class="btn btn-ghost btn-xs btn-staged" data-id="${escapeHtml(src.id)}" data-dec="reject" type="button">Discard</button>
+            <button class="btn btn-secondary btn-xs btn-staged" data-id="${escapeHtml(src.id)}" data-dec="accept" type="button">${icon("plus")}Add to library</button>
+          </div>
+        </article>`
+      )
+      .join("");
 
   list.querySelectorAll(".btn-prop-decide").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const prop = pending.find((x) => x.id === btn.dataset.id);
+      const prop = open.find((x) => x.id === btn.dataset.id);
       setLoading(btn, true);
       try {
         const updated = await api(`/api/projects/${proj.id}/proposals/${btn.dataset.id}/decide`, {
@@ -1855,6 +2070,22 @@ function renderProposals() {
         });
         setProjectState(updated);
         toast(`${btn.dataset.dec === "accept" ? "Accepted" : "Rejected"}: ${prop ? stripEmoji(prop.title) : "proposal"}`);
+      } catch (err) {
+        reportError("Not applied", err);
+        loadProject(proj.id).catch(() => {});
+      }
+    });
+  });
+  list.querySelectorAll(".btn-staged").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      setLoading(btn, true);
+      try {
+        const updated = await api(`/api/projects/${proj.id}/staged/${btn.dataset.id}/decide`, {
+          method: "POST",
+          body: JSON.stringify({ decision: btn.dataset.dec }),
+        });
+        setProjectState(updated);
+        toast(btn.dataset.dec === "accept" ? "Added to library" : "Source discarded");
       } catch (err) {
         setLoading(btn, false);
         reportError("Could not record the decision", err);
@@ -1993,7 +2224,6 @@ async function runDeepResearch() {
   const input = $("chatInput");
   const focus = input.value.trim();
   const btn = $("btnDeepResearch");
-  const before = (state.currentProject.sources || []).length;
   state.sending = true;
   setLoading(btn, true);
   $("btnSendChat").disabled = true;
@@ -2007,10 +2237,9 @@ async function runDeepResearch() {
     input.value = "";
     autoGrow(input);
     setProjectState(updated);
-    const added = (updated.sources || []).length - before;
+    const added = (updated.staged_sources || []).length;
     const pending = (updated.proposals || []).filter((p) => p.status === "pending").length;
-    toast(`Research finished: ${added > 0 ? `${added} new source${added > 1 ? "s" : ""}` : "no new sources"}${pending ? `, ${pending} change${pending > 1 ? "s" : ""} to review` : ""}`);
-    if (added > 0 && document.body.dataset.left === "closed") setPanel("left", "open");
+    toast(`Research finished: ${added > 0 ? `${added} source${added > 1 ? "s" : ""} staged for review` : "no new sources"}${pending ? `, ${pending} proposal${pending > 1 ? "s" : ""}` : ""}. Nothing changes until you accept.`);
   } catch (err) {
     state.sending = false;
     clearPending();
@@ -2059,6 +2288,7 @@ function setViewMode(mode) {
   $("dagCanvasPanel").classList.toggle("hidden", mode !== "canvas" && mode !== "split");
   $("notebookPanel").classList.toggle("hidden", mode !== "notebook" && mode !== "split");
   $("matrixPanel").classList.toggle("hidden", mode !== "matrix");
+  $("dataPanel").classList.toggle("hidden", mode !== "data");
   $("briefingPanel").classList.toggle("hidden", mode !== "briefing");
   $("auditPanel").classList.toggle("hidden", mode !== "audit");
   document.body.classList.toggle("view-not-canvas", mode !== "canvas" && mode !== "split");
@@ -2136,14 +2366,52 @@ function bindUIEvents() {
   // External search portals
   $("btnOpenScholarPortal").onclick = () => window.open(`https://scholar.google.com/scholar?q=${encodeURIComponent(currentSearchQuery())}`, "_blank", "noopener");
   $("btnOpenCorePortal").onclick = () => window.open(`https://core.ac.uk/search?q=${encodeURIComponent(currentSearchQuery())}`, "_blank", "noopener");
-  $("btnOpenScihubPortal").onclick = () => {
-    const mirror = state.settings?.scihub_mirror_url;
-    if (!mirror) {
-      toast("Set a full-text resolver in AI and search settings first", { error: true });
-      return;
+  $("btnOpenEpmcPortal").onclick = () => window.open(`https://europepmc.org/search?query=${encodeURIComponent(currentSearchQuery())}`, "_blank", "noopener");
+
+  // PDF upload (stays on this machine)
+  $("btnUploadPdf").onclick = () => $("pdfFileInput").click();
+  $("pdfFileInput").addEventListener("change", async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!file || !state.currentProject) return;
+    const btn = $("btnUploadPdf");
+    setLoading(btn, true);
+    try {
+      const updated = await upload(`/api/projects/${state.currentProject.id}/sources/upload`, file);
+      setProjectState(updated);
+      const added = updated.sources[updated.sources.length - 1];
+      toast(added && added.injection_flags && added.injection_flags.length ? "PDF added. It contains instruction-like text, which is treated as data only." : "PDF added to the library");
+    } catch (err) {
+      reportError("PDF not added", err);
+    } finally {
+      setLoading(btn, false);
     }
-    window.open(`${mirror.replace(/\/$/, "")}/${encodeURIComponent(currentSearchQuery())}`, "_blank", "noopener");
-  };
+  });
+
+  // Dataset upload
+  $("btnUploadCsv").onclick = () => $("csvFileInput").click();
+  $("csvFileInput").addEventListener("change", async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!file || !state.currentProject) return;
+    const btn = $("btnUploadCsv");
+    setLoading(btn, true);
+    try {
+      const updated = await upload(`/api/projects/${state.currentProject.id}/datasets`, file);
+      state.dataResults = { implications: null, estimate: null };
+      setProjectState(updated);
+      const ds = updated.datasets[0];
+      toast(`${ds.filename}: ${ds.n_rows} rows, ${Object.keys(ds.mapping).length} variables matched automatically`);
+    } catch (err) {
+      reportError("Dataset not loaded", err);
+    } finally {
+      setLoading(btn, false);
+    }
+  });
+
+  // Causal question
+  $("qTemplate").addEventListener("change", () => applyQuestionLabels($("qTemplate").value));
+  $("btnSaveQuestion").onclick = saveQuestion;
 
   // Manual source form
   const drawer = $("manualSourceDrawer");
@@ -2321,7 +2589,7 @@ function bindUIEvents() {
   const TEXT_FIELDS = [
     ["settingOllamaUrl", "ollama_base_url", "http://localhost:11434"],
     ["settingScholarlyEmail", "scholarly_email", ""],
-    ["settingScihubUrl", "scihub_mirror_url", ""],
+    ["settingEzproxy", "ezproxy_prefix", ""],
     ["settingSearxngUrl", "searxng_base_url", ""],
   ];
   $("btnSettingsModal").onclick = async () => {
@@ -2334,6 +2602,7 @@ function bindUIEvents() {
       $(badge).textContent = s[`${key}_configured`] ? "Saved" : "";
     });
     TEXT_FIELDS.forEach(([id, key, dflt]) => ($(id).value = s[key] || dflt));
+    $("settingOffline").checked = Boolean(s.offline_mode);
     $("ollamaDetectedCount").textContent = (s.detected_ollama_models || []).length;
     populateModelPresets();
     openDialog("settingsModal");
@@ -2351,10 +2620,12 @@ function bindUIEvents() {
     };
     KEY_FIELDS.forEach(([id, key]) => (updates[key] = $(id).value.trim()));
     TEXT_FIELDS.forEach(([id, key]) => (updates[key] = $(id).value.trim()));
+    updates.offline_mode = $("settingOffline").checked;
     setLoading(btn, true);
     try {
       state.settings = await api("/api/settings", { method: "POST", body: JSON.stringify(updates) });
       renderProviderPill();
+      applyOffline(Boolean(state.settings.offline_mode));
       closeDialog("settingsModal");
       toast(`Settings saved. Using ${PROVIDER_LABELS[state.settings.active_provider] || state.settings.active_provider}`);
     } catch (err) {
@@ -2505,7 +2776,7 @@ function bindUIEvents() {
     if (k === "/") { ev.preventDefault(); if (document.body.dataset.left === "closed") setPanel("left", "open"); $("litSearchInput").focus(); return; }
     if (k === "[") { $("btnToggleLeft").click(); return; }
     if (k === "]") { $("btnToggleRight").click(); return; }
-    if (/^[1-6]$/.test(k)) { setViewMode(VIEW_MODES[Number(k) - 1]); return; }
+    if (/^[1-7]$/.test(k)) { setViewMode(VIEW_MODES[Number(k) - 1]); return; }
     if (!onCanvas) return;
     if (k === "n" || k === "N") { ev.preventDefault(); addNode(); }
     else if (k === "a" || k === "A") setConnectMode(!state.connectMode);
@@ -2653,4 +2924,254 @@ function renderWorldviewsModal() {
       }
     });
   });
+}
+
+
+// ============================================================================
+// UPLOADS, DATA VIEW, CAUSAL QUESTION
+// ============================================================================
+
+async function upload(path, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const resp = await fetch(path, { method: "POST", body: fd });
+  if (!resp.ok) {
+    let msg = await resp.text();
+    try { msg = JSON.parse(msg).detail || msg; } catch (e) { /* text */ }
+    throw new Error(msg || `Upload failed (HTTP ${resp.status})`);
+  }
+  return resp.json();
+}
+
+function fmtNum(x, d = 3) {
+  if (x === null || x === undefined || Number.isNaN(x)) return "–";
+  const a = Math.abs(x);
+  if (a !== 0 && (a < 0.001 || a >= 1e5)) return x.toExponential(2);
+  return Number(x).toFixed(d);
+}
+
+function fmtP(p) {
+  if (p === null || p === undefined) return "–";
+  return p < 0.001 ? "< 0.001" : p.toFixed(3);
+}
+
+function renderDataView() {
+  const proj = state.currentProject;
+  if (!proj) return;
+  const el = $("dataContent");
+  const ds = (proj.datasets || [])[0];
+  if (!ds) {
+    el.innerHTML = `
+      <div class="empty-data">
+        <p class="empty-title">Bring data to the graph</p>
+        <p class="empty-body">Upload a CSV with one column per measured variable. The app then (1) tests every conditional independence your graph implies, which can reveal a missing arrow or a wrong assumption, and (2) estimates the effect using only an adjustment set the engine has certified as valid, with regression and double machine learning, plus an E-value for sensitivity to unmeasured confounding.</p>
+        <p class="empty-body">The file is stored in this project's data folder and never sent anywhere.</p>
+      </div>`;
+    return;
+  }
+  const cols = ds.columns.map((c) => c.name);
+  const observed = proj.nodes.filter((n) => n.observed && n.role !== "latent");
+  const kind = Object.fromEntries(ds.columns.map((c) => [c.name, c]));
+  const mapRows = observed
+    .map((n) => {
+      const cur = ds.mapping[n.id] || "";
+      const c = kind[cur];
+      return `<tr>
+        <td>${escapeHtml(n.label)} <span class="muted-xs">${escapeHtml(ROLE_LABELS[n.role] || n.role)}</span></td>
+        <td><select class="select map-select" data-node="${escapeHtml(n.id)}" aria-label="Column for ${escapeHtml(n.label)}">
+          <option value="">Not measured</option>
+          ${cols.map((col) => `<option value="${escapeHtml(col)}" ${col === cur ? "selected" : ""}>${escapeHtml(col)}</option>`).join("")}
+        </select></td>
+        <td class="num">${c ? `${escapeHtml(c.kind)}${c.missing ? `, ${c.missing} missing` : ""}` : ""}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const imp = state.dataResults.implications;
+  const est = state.dataResults.estimate;
+  el.innerHTML = `
+    <section class="data-block">
+      <h3>${escapeHtml(ds.filename)}</h3>
+      <p class="muted">${ds.n_rows.toLocaleString()} rows, ${ds.columns.length} columns. Match each variable in the graph to a column. Unmapped variables are treated as unmeasured.</p>
+      <table class="map-table">
+        <thead><tr><th scope="col">Variable</th><th scope="col">Column</th><th scope="col">Type</th></tr></thead>
+        <tbody>${mapRows}</tbody>
+      </table>
+      <div class="data-actions">
+        <button id="btnSaveMapping" class="btn btn-secondary btn-sm" type="button">Save mapping</button>
+        <button id="btnRemoveDataset" class="btn btn-danger btn-sm" type="button">${icon("trash")}Remove dataset</button>
+      </div>
+    </section>
+
+    <section class="data-block">
+      <h3>Does the data contradict the graph?</h3>
+      <p class="muted">Each missing arrow in a DAG implies that two variables are independent given some others. These implications are tested one by one. A rejection means the data disagree with the graph; no rejection means the data are consistent with it, not that it is proven.</p>
+      <div class="data-actions">
+        <label class="sr-only" for="ciMethod">Test</label>
+        <select id="ciMethod" class="select select-sm">
+          <option value="auto">Automatic choice</option>
+          <option value="partial_correlation">Partial correlation (linear, Fisher's z)</option>
+          <option value="gcm">Generalised covariance measure (non-linear, boosted trees)</option>
+        </select>
+        <button id="btnRunImplications" class="btn btn-primary btn-sm" type="button">Test implications</button>
+      </div>
+      <div id="implicationsOut">${imp ? implicationsHtml(imp) : ""}</div>
+    </section>
+
+    <section class="data-block">
+      <h3>Estimate the effect</h3>
+      <p class="muted">Uses your current adjustment set if the engine certifies it, otherwise the first minimal valid set. If the effect is not identifiable by adjustment, no number is produced.</p>
+      <div class="data-actions">
+        <button id="btnRunEstimate" class="btn btn-primary btn-sm" type="button">Estimate ${escapeHtml(((proj.diagnostics || {}).exposure || {}).label || "exposure")} → ${escapeHtml(((proj.diagnostics || {}).outcome || {}).label || "outcome")}</button>
+      </div>
+      <div id="estimateOut">${est ? estimateHtml(est) : ""}</div>
+    </section>`;
+
+  $("btnSaveMapping").onclick = async () => {
+    const mapping = {};
+    el.querySelectorAll(".map-select").forEach((s) => { if (s.value) mapping[s.dataset.node] = s.value; });
+    try {
+      const updated = await api(`/api/projects/${proj.id}/datasets/${ds.id}`, { method: "PUT", body: JSON.stringify({ mapping }) });
+      state.dataResults = { implications: null, estimate: null };
+      setProjectState(updated);
+      toast("Mapping saved");
+    } catch (err) { reportError("Mapping not saved", err); }
+  };
+  $("btnRemoveDataset").onclick = async () => {
+    try {
+      const updated = await api(`/api/projects/${proj.id}/datasets/${ds.id}`, { method: "DELETE" });
+      state.dataResults = { implications: null, estimate: null };
+      setProjectState(updated);
+      toast("Dataset removed from this machine");
+    } catch (err) { reportError("Dataset not removed", err); }
+  };
+  $("btnRunImplications").onclick = async () => {
+    const btn = $("btnRunImplications");
+    setLoading(btn, true);
+    try {
+      state.dataResults.implications = await api(`/api/projects/${proj.id}/datasets/${ds.id}/implications`, {
+        method: "POST", body: JSON.stringify({ method: $("ciMethod").value }),
+      });
+      $("implicationsOut").innerHTML = implicationsHtml(state.dataResults.implications);
+    } catch (err) { reportError("Tests did not run", err); }
+    finally { setLoading(btn, false); }
+  };
+  $("btnRunEstimate").onclick = async () => {
+    const btn = $("btnRunEstimate");
+    setLoading(btn, true);
+    try {
+      state.dataResults.estimate = await api(`/api/projects/${proj.id}/datasets/${ds.id}/estimate`, { method: "POST", body: "{}" });
+      $("estimateOut").innerHTML = estimateHtml(state.dataResults.estimate);
+    } catch (err) { reportError("No estimate", err); }
+    finally { setLoading(btn, false); }
+  };
+}
+
+function implicationsHtml(r) {
+  const ok = r.tested > 0 && r.rejected === 0;
+  return `
+    <div class="verdict-line ${ok ? "is-ok" : r.rejected ? "is-bad" : ""}">${icon(ok ? "circle-check" : r.rejected ? "octagon" : "info")}<span>${escapeHtml(r.verdict.charAt(0).toUpperCase() + r.verdict.slice(1))}</span></div>
+    <p class="muted">${r.tested} tested, ${r.rejected} rejected at α = ${r.alpha} after Holm correction. ${escapeHtml(r.interpretation)}</p>
+    ${r.results.length ? `<table class="res-table" style="margin-top:10px">
+      <thead><tr><th scope="col">Implied independence</th><th scope="col">n</th><th scope="col">Test</th><th scope="col">Partial r</th><th scope="col">p</th><th scope="col">p (Holm)</th><th scope="col">p (BH)</th></tr></thead>
+      <tbody>${r.results.map((x) => `<tr class="${x.rejected ? "is-rejected" : ""}">
+        <td>${escapeHtml(x.implication)}${x.rejected ? ` <span class="pill pill-bad">rejected</span>` : ""}</td>
+        <td class="num">${x.n}</td><td>${x.method === "gcm" ? "GCM" : "Partial corr."}</td>
+        <td class="num">${fmtNum(x.partial_r)}</td><td class="num">${fmtP(x.p_value)}</td><td class="num">${fmtP(x.p_holm)}</td><td class="num">${fmtP(x.p_bh)}</td></tr>`).join("")}</tbody>
+    </table>` : ""}
+    ${r.skipped.length ? `<p class="muted" style="margin-top:8px">Not tested: ${r.skipped.map((x) => `${escapeHtml(x.implication)} (${escapeHtml(x.reason)})`).join("; ")}</p>` : ""}`;
+}
+
+function forestHtml(items) {
+  const lo = Math.min(0, ...items.map((i) => i.ci_low));
+  const hi = Math.max(0, ...items.map((i) => i.ci_high));
+  const pad = (hi - lo) * 0.08 || 1;
+  const a = lo - pad, b = hi + pad;
+  const W = 600, rowH = 30, left = 220, right = 20, H = items.length * rowH + 30;
+  const X = (v) => left + ((v - a) / (b - a)) * (W - left - right);
+  const rows = items.map((it, k) => {
+    const y = 18 + k * rowH;
+    return `<text x="0" y="${y + 4}">${escapeHtml(it.name)}</text>
+      <line class="ci" x1="${X(it.ci_low)}" x2="${X(it.ci_high)}" y1="${y}" y2="${y}"/>
+      <circle class="pt" cx="${X(it.estimate)}" cy="${y}" r="5"/>`;
+  }).join("");
+  return `<div class="forest" role="img" aria-label="Estimates with 95% confidence intervals">
+    <svg viewBox="0 0 ${W} ${H}">
+      <line class="zero" x1="${X(0)}" x2="${X(0)}" y1="4" y2="${H - 18}"/>
+      <line class="axis" x1="${left}" x2="${W - right}" y1="${H - 18}" y2="${H - 18}"/>
+      <text x="${left}" y="${H - 4}">${fmtNum(a, 2)}</text>
+      <text x="${W - right}" y="${H - 4}" text-anchor="end">${fmtNum(b, 2)}</text>
+      <text x="${X(0)}" y="${H - 4}" text-anchor="middle">0</text>
+      ${rows}
+    </svg></div>`;
+}
+
+function estimateHtml(r) {
+  const est = r.estimators;
+  const cards = Object.entries(est).map(([k, e]) => `
+    <div class="estimate">
+      <div class="estimate-label">${escapeHtml(e.label)}</div>
+      <div class="estimate-value">${fmtNum(e.estimate)}</div>
+      <div class="estimate-ci">95% CI ${fmtNum(e.ci_low)} to ${fmtNum(e.ci_high)}${e.bootstrap_ci ? `; bootstrap ${fmtNum(e.bootstrap_ci[0])} to ${fmtNum(e.bootstrap_ci[1])}` : ""}</div>
+      ${e.risk_ratio ? `<div class="estimate-ci">Risk ratio ${fmtNum(e.risk_ratio.estimate)} (${fmtNum(e.risk_ratio.ci_low)} to ${fmtNum(e.risk_ratio.ci_high)})</div>` : ""}
+      ${e.overlap ? `<div class="estimate-ci">Propensity range ${fmtNum(e.overlap.propensity_min)} to ${fmtNum(e.overlap.propensity_max)}; ${e.overlap.clipped_units} units clipped at ${e.overlap.clip_at}</div>` : ""}
+      <div class="estimate-meaning">${escapeHtml(e.meaning || "")}</div>
+    </div>`).join("");
+  const ev = r.e_value || {};
+  return `
+    <p class="muted" style="margin-top:10px">${escapeHtml(r.exposure)} → ${escapeHtml(r.outcome)}, n = ${r.n.toLocaleString()}, adjusted for ${r.adjusted_for_labels.length ? escapeHtml(r.adjusted_for_labels.join(", ")) : "nothing (the empty set is valid)"}, using ${escapeHtml(r.adjustment_source)}. Graph version ${r.graph_version}.</p>
+    <div class="estimate-grid">${cards}
+      <div class="estimate">
+        <div class="estimate-label">E-value (${escapeHtml(ev.scale || "")})</div>
+        <div class="estimate-value">${fmtNum(ev.point, 2)}</div>
+        <div class="estimate-ci">For the confidence limit: ${fmtNum(ev.ci_limit, 2)}</div>
+        <div class="estimate-meaning">${escapeHtml(ev.meaning || "")}</div>
+      </div>
+    </div>
+    ${forestHtml(Object.values(est).map((e) => ({ name: e.label.split(" (")[0].split(",")[0], estimate: e.estimate, ci_low: e.ci_low, ci_high: e.ci_high })))}
+    <p class="muted" style="margin-top:12px">These numbers are causal only under these assumptions:</p>
+    <ul class="assumption-list">${(r.assumptions || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`;
+}
+
+const QUESTION_LABELS = {
+  general: { unit: "Population or units", exposure: "Exposure or treatment", comparator: "Comparator", outcome: "Outcome", time: "Time horizon" },
+  pico: { unit: "Patients (P)", exposure: "Intervention (I)", comparator: "Comparator (C)", outcome: "Outcome (O)", time: "Follow-up" },
+  peco: { unit: "Population (P)", exposure: "Exposure (E)", comparator: "Comparator exposure (C)", outcome: "Outcome (O)", time: "Exposure window and follow-up" },
+  policy: { unit: "Units (people, firms, regions)", exposure: "Treatment or policy", comparator: "Counterfactual condition", outcome: "Outcome", time: "Post-treatment period" },
+  scm: { unit: "System or population", exposure: "Intervention do(X = x)", comparator: "Reference intervention do(X = x′)", outcome: "Target variable", time: "Time step" },
+  longitudinal: { unit: "Sample", exposure: "Exposure construct", comparator: "Comparison level", outcome: "Outcome construct", time: "Waves and lags" },
+};
+
+function applyQuestionLabels(tpl) {
+  const labels = QUESTION_LABELS[tpl] || QUESTION_LABELS.general;
+  document.querySelectorAll("[data-qlabel]").forEach((l) => (l.textContent = labels[l.dataset.qlabel]));
+}
+
+function renderQuestion() {
+  const q = (state.currentProject && state.currentProject.question) || {};
+  const set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = v || ""; };
+  set("qTemplate", q.template || "general");
+  set("qEstimand", q.estimand || "");
+  set("qUnit", q.unit); set("qSetting", q.setting); set("qExposure", q.exposure);
+  set("qComparator", q.comparator); set("qOutcome", q.outcome); set("qTime", q.time_horizon);
+  applyQuestionLabels(q.template || "general");
+  const parts = [q.exposure && `effect of ${q.exposure}`, q.comparator && `versus ${q.comparator}`, q.outcome && `on ${q.outcome}`, q.unit && `in ${q.unit}`, q.time_horizon && `over ${q.time_horizon}`].filter(Boolean);
+  $("questionSummary").textContent = parts.length ? parts.join(" ") : "Not defined yet";
+}
+
+async function saveQuestion() {
+  if (!state.currentProject) return;
+  const question = {
+    template: $("qTemplate").value, estimand: $("qEstimand").value, unit: $("qUnit").value.trim(),
+    setting: $("qSetting").value.trim(), exposure: $("qExposure").value.trim(), comparator: $("qComparator").value.trim(),
+    outcome: $("qOutcome").value.trim(), time_horizon: $("qTime").value.trim(),
+  };
+  try {
+    const updated = await api(`/api/projects/${state.currentProject.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ question, audit_action: "Updated causal question", audit_note: `${question.template.toUpperCase()} framing, estimand ${question.estimand || "unset"}` }),
+    });
+    setProjectState(updated);
+    toast("Question saved");
+  } catch (err) { reportError("Question not saved", err); }
 }

@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
   <title>DAG Brain</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" />
   <link rel="stylesheet" href="/static/styles.css" />
   <script>
     try { const t = localStorage.getItem("dagbrain.theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
@@ -61,6 +58,9 @@
       <symbol id="i-layers" viewBox="0 0 24 24"><path d="M3 7h4M10 7h4M17 7h4M3 12h4M17 12h4M10 17h4"/></symbol>
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
       <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8Z"/><path d="M14 3v5h5"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.4 3 7.7 7 9 4-1.3 7-4.6 7-9V6Z"/></symbol>
       <symbol id="i-notebook-plus" viewBox="0 0 24 24"><path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6Z"/><path d="M6 3v18M3 7h3M3 12h3M3 17h3M12.5 9v6M9.5 12h6"/></symbol>
     </defs>
   </svg>
@@ -91,6 +91,7 @@
 
     <div class="topbar-spacer"></div>
 
+    <span id="offlineBadge" class="offline-badge hidden" title="Local-only mode: no request leaves this machine except to local services such as Ollama"><svg class="i"><use href="#i-shield"/></svg>Local only</span>
     <span id="saveStatus" class="save-status hide-narrow" aria-live="polite"></span>
 
     <button id="btnWorldviews" class="btn btn-ghost btn-sm" type="button" title="Save and compare alternative versions of this graph">
@@ -118,9 +119,15 @@
     <aside class="panel panel-sources" id="panelSources" aria-labelledby="sourcesTitle">
       <div class="panel-head">
         <h2 class="panel-title" id="sourcesTitle">Sources <span id="vaultCount" class="count">0</span></h2>
-        <button id="btnAddManualSource" class="icon-btn" type="button" aria-label="Add a source manually" aria-expanded="false" title="Add a source by hand or DOI">
-          <svg class="i"><use href="#i-plus"/></svg>
-        </button>
+        <div class="row">
+          <button id="btnUploadPdf" class="icon-btn" type="button" aria-label="Upload a PDF" title="Upload a PDF (stays on this machine)">
+            <svg class="i"><use href="#i-upload"/></svg>
+          </button>
+          <input id="pdfFileInput" type="file" accept="application/pdf,.pdf" class="sr-only" tabindex="-1" aria-hidden="true" />
+          <button id="btnAddManualSource" class="icon-btn" type="button" aria-label="Add a source manually" aria-expanded="false" title="Add a source by hand or DOI">
+            <svg class="i"><use href="#i-plus"/></svg>
+          </button>
+        </div>
       </div>
 
       <div class="panel-search">
@@ -144,8 +151,8 @@
         <span class="opts-sep" aria-hidden="true"></span>
         <span class="opts-label">Open in</span>
         <button id="btnOpenScholarPortal" class="ext-link" type="button" title="Run this search on Google Scholar">Scholar<svg class="i"><use href="#i-external"/></svg></button>
-        <button id="btnOpenCorePortal" class="ext-link" type="button" title="Run this search on CORE">CORE<svg class="i"><use href="#i-external"/></svg></button>
-        <button id="btnOpenScihubPortal" class="ext-link" type="button" title="Resolve this DOI with your configured full-text mirror">Mirror<svg class="i"><use href="#i-external"/></svg></button>
+        <button id="btnOpenCorePortal" class="ext-link" type="button" title="Run this search on CORE (open access)">CORE<svg class="i"><use href="#i-external"/></svg></button>
+        <button id="btnOpenEpmcPortal" class="ext-link" type="button" title="Run this search on Europe PMC">Europe PMC<svg class="i"><use href="#i-external"/></svg></button>
       </div>
 
       <form id="manualSourceDrawer" class="inline-form hidden" aria-label="Add a source manually" onsubmit="return false">
@@ -263,6 +270,7 @@
             <h4 class="subhead">All paths and what blocks them</h4>
             <div id="allPathsList" class="path-list"></div>
           </div>
+          <div class="paths-col tiers" id="tiersPanel"></div>
         </div>
       </div>
 
@@ -272,8 +280,9 @@
           <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="split" type="button" title="Graph and notebook side by side (2)"><svg class="i"><use href="#i-columns"/></svg><span class="tab-label">Split</span></button>
           <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="notebook" type="button" title="Notebook (3)"><svg class="i"><use href="#i-book"/></svg><span class="tab-label">Notebook</span></button>
           <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="matrix" type="button" title="Evidence matrix (4)"><svg class="i"><use href="#i-table"/></svg><span class="tab-label">Evidence</span></button>
-          <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="briefing" type="button" title="Lab briefing (5)"><svg class="i"><use href="#i-headphones"/></svg><span class="tab-label">Briefing</span></button>
-          <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="audit" type="button" title="History (6)"><svg class="i"><use href="#i-history"/></svg><span class="tab-label">History</span></button>
+          <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="data" type="button" title="Test the graph against data and estimate the effect (5)"><svg class="i"><use href="#i-chart"/></svg><span class="tab-label">Data</span></button>
+          <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="briefing" type="button" title="Lab briefing (6)"><svg class="i"><use href="#i-headphones"/></svg><span class="tab-label">Briefing</span></button>
+          <button class="tab mode-tab" role="tab" aria-selected="false" data-cmode="audit" type="button" title="History (7)"><svg class="i"><use href="#i-history"/></svg><span class="tab-label">History</span></button>
         </div>
 
         <div id="canvasTools" class="tools">
@@ -297,11 +306,12 @@
               <pattern id="dotGrid" width="20" height="20" patternUnits="userSpaceOnUse">
                 <circle cx="1" cy="1" r="1" class="grid-dot"/>
               </pattern>
-              <marker id="arrow-empirical" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-empirical"/></marker>
-              <marker id="arrow-hypothesized" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-hypothesized"/></marker>
+              <marker id="arrow-causal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-causal"/></marker>
+              <marker id="arrow-assoc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-assoc"/></marker>
+              <marker id="arrow-hyp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-hyp"/></marker>
+              <marker id="arrow-ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-ai"/></marker>
               <marker id="arrow-contested" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-contested"/></marker>
-              <marker id="arrow-ai_proposed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-ai_proposed"/></marker>
-              <marker id="arrow-bidirectional_confounded" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-bidirectional_confounded"/></marker>
+              <marker id="arrow-bi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-bi"/></marker>
               <marker id="arrow-hl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1.2 10 5 0 8.8 2.2 5z" class="mk mk-hl"/></marker>
             </defs>
             <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#dotGrid)" class="grid-bg"/>
@@ -332,12 +342,13 @@
                 <span class="lg-role lg-adjusted" style="--role:var(--r-other)">Adjusted for</span>
               </div>
               <div class="legend-col">
-                <span class="legend-head">Arrows</span>
-                <span class="lg-edge e-empirical">Cited evidence</span>
-                <span class="lg-edge e-hypothesized">Hypothesised</span>
+                <span class="legend-head">Arrows by evidence</span>
+                <span class="lg-edge e-causal">Experimental or quasi-experimental</span>
+                <span class="lg-edge e-assoc">Association or mechanism</span>
+                <span class="lg-edge e-hyp">Hypothesis</span>
+                <span class="lg-edge e-ai">AI hypothesis</span>
                 <span class="lg-edge e-contested">Contested</span>
-                <span class="lg-edge e-ai_proposed">AI proposed</span>
-                <span class="lg-edge e-bidirectional_confounded">Shared latent cause</span>
+                <span class="lg-edge e-bi">Shared latent cause (↔)</span>
               </div>
             </div>
           </details>
@@ -356,6 +367,49 @@
               <button id="btnSaveNotebook" class="btn btn-secondary btn-sm" type="button" title="Save (Ctrl+S)"><svg class="i"><use href="#i-save"/></svg>Save</button>
             </div>
           </div>
+          <details id="questionCard" class="question-card">
+            <summary><span class="subhead">Causal question</span><span id="questionSummary" class="muted"></span><svg class="i chev" aria-hidden="true"><use href="#i-chevron-down"/></svg></summary>
+            <div class="question-body">
+              <div class="field-row">
+                <div class="field grow">
+                  <label for="qTemplate">Framing</label>
+                  <select id="qTemplate" class="select">
+                    <option value="general">General (any discipline)</option>
+                    <option value="pico">PICO: clinical intervention</option>
+                    <option value="peco">PECO: epidemiological exposure</option>
+                    <option value="policy">Policy or treatment effect (economics)</option>
+                    <option value="scm">Intervention on a structural causal model (ML)</option>
+                    <option value="longitudinal">Longitudinal or mediation (psychology)</option>
+                  </select>
+                </div>
+                <div class="field grow">
+                  <label for="qEstimand">Target estimand</label>
+                  <select id="qEstimand" class="select">
+                    <option value="">Not yet chosen</option>
+                    <option value="ate">Average treatment effect (ATE)</option>
+                    <option value="att">Effect in the treated (ATT)</option>
+                    <option value="cde">Controlled direct effect</option>
+                    <option value="nde">Natural direct effect</option>
+                    <option value="nie">Natural indirect effect</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field grow"><label for="qUnit" data-qlabel="unit">Population or units</label><input id="qUnit" class="input" /></div>
+                <div class="field grow"><label for="qSetting">Setting</label><input id="qSetting" class="input" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field grow"><label for="qExposure" data-qlabel="exposure">Exposure or treatment</label><input id="qExposure" class="input" /></div>
+                <div class="field grow"><label for="qComparator" data-qlabel="comparator">Comparator</label><input id="qComparator" class="input" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field grow"><label for="qOutcome" data-qlabel="outcome">Outcome</label><input id="qOutcome" class="input" /></div>
+                <div class="field grow"><label for="qTime" data-qlabel="time">Time horizon</label><input id="qTime" class="input" /></div>
+              </div>
+              <div class="form-actions"><button id="btnSaveQuestion" class="btn btn-secondary btn-sm" type="button">Save question</button></div>
+            </div>
+          </details>
           <div id="notebookBody" class="notebook-body split-view">
             <label class="sr-only" for="notebookEditor">Notebook markdown</label>
             <textarea id="notebookEditor" class="notebook-editor" spellcheck="true" placeholder="# Research protocol&#10;&#10;Write in Markdown. Headings, lists, **bold** and *italics* render in the preview."></textarea>
@@ -374,6 +428,20 @@
             </div>
           </div>
           <div id="evidenceMatrixContainer" class="matrix-scroll"></div>
+        </div>
+
+        <div id="dataPanel" class="matrix hidden">
+          <div class="notebook-head">
+            <div class="notebook-title">
+              <h2 class="panel-title">Data</h2>
+              <span class="muted">Check whether your data contradict the graph, then estimate the effect with the adjustment set the engine certified. Files stay on this machine.</span>
+            </div>
+            <div class="row gap-1">
+              <input id="csvFileInput" type="file" accept=".csv,text/csv,.tsv,text/tab-separated-values" class="sr-only" tabindex="-1" aria-hidden="true" />
+              <button id="btnUploadCsv" class="btn btn-secondary btn-sm" type="button"><svg class="i"><use href="#i-upload"/></svg>Upload CSV</button>
+            </div>
+          </div>
+          <div id="dataContent" class="matrix-scroll data-scroll"></div>
         </div>
 
         <div id="briefingPanel" class="briefing hidden">
@@ -522,6 +590,14 @@
         </fieldset>
 
         <fieldset class="fieldset">
+          <legend>Privacy</legend>
+          <label class="check" style="margin-top:0">
+            <input type="checkbox" id="settingOffline" />
+            <div><strong>Local-only mode</strong><span>Block every outbound request: literature search, web search, cloud models, Unpaywall and web fonts. Ollama and other servers on this machine keep working.</span></div>
+          </label>
+        </fieldset>
+
+        <fieldset class="fieldset">
           <legend>Literature and web search</legend>
           <div class="field-row">
             <div class="field grow">
@@ -549,12 +625,12 @@
             <div class="field grow">
               <label for="settingScholarlyEmail">Contact email for OpenAlex and Crossref</label>
               <input type="email" id="settingScholarlyEmail" class="input" placeholder="you@university.edu" />
-              <p class="help">Requests that include an email get faster, more reliable responses.</p>
+              <p class="help">Requests that include an email get faster, more reliable responses. Also used for Unpaywall open-access lookups.</p>
             </div>
             <div class="field grow">
-              <label for="settingScihubUrl">Full-text DOI resolver</label>
-              <input type="url" id="settingScihubUrl" class="input mono" placeholder="https://…" />
-              <p class="help">Used by the Mirror links. Check that your institution permits the resolver you set.</p>
+              <label for="settingEzproxy">Institutional proxy prefix (EZproxy)</label>
+              <input type="url" id="settingEzproxy" class="input mono" placeholder="https://ezproxy.uni.edu/login?url=" />
+              <p class="help">Adds a link through your library for full text you are licensed to read.</p>
             </div>
           </div>
         </fieldset>

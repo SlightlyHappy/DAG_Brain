@@ -1221,3 +1221,129 @@ body.view-not-canvas #canvasTools { visibility: hidden; }
   .study-switch { min-width: 120px; }
   #btnWorldviews .count { display: none; }
 }
+
+/* =========================================================================
+   Scientific integrity layer: evidence-coded arrows, assumptions, data view
+   ========================================================================= */
+
+/* Arrows encode the strength of evidence, not just its presence. */
+.e-causal .edge-line { stroke: var(--e-empirical); stroke-width: 2; }
+.e-assoc .edge-line { stroke: var(--e-empirical); stroke-dasharray: 9 3; opacity: 0.75; }
+.e-hyp .edge-line { stroke: var(--e-hypothesized); stroke-dasharray: 5 4; }
+.e-ai .edge-line { stroke: var(--e-ai_proposed); stroke-dasharray: 7 3 2 3; }
+.e-bi .edge-line { stroke: var(--e-bidirectional_confounded); stroke-dasharray: 1.5 4; }
+.e-contested .edge-line { stroke: var(--e-contested); }
+.mk-causal, .mk-assoc { fill: var(--e-empirical); }
+.mk-hyp { fill: var(--e-hypothesized); }
+.mk-ai { fill: var(--e-ai_proposed); }
+.mk-bi { fill: var(--e-bidirectional_confounded); }
+.mk-contested { fill: var(--e-contested); }
+.lg-edge.e-causal { --c: var(--e-empirical); }
+.lg-edge.e-assoc { --c: var(--e-empirical); }
+.lg-edge.e-assoc::before { border-top-style: dashed; opacity: 0.75; }
+.lg-edge.e-hyp { --c: var(--e-hypothesized); }
+.lg-edge.e-hyp::before { border-top-style: dashed; }
+.lg-edge.e-ai { --c: var(--e-ai_proposed); }
+.lg-edge.e-ai::before { border-top-style: dashed; }
+.lg-edge.e-bi { --c: var(--e-bidirectional_confounded); }
+.lg-edge.e-bi::before { border-top-style: dotted; }
+
+/* Local-only badge */
+.offline-badge {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px;
+  border-radius: 12px; background: var(--ok-soft); color: var(--ok-text);
+  font-size: var(--fs-xs); font-weight: 600; white-space: nowrap;
+}
+.offline-badge .i { width: 13px; height: 13px; }
+
+/* Assumptions and support, inside the paths drawer */
+.paths .tiers { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tier h4 { margin-bottom: 6px; }
+.tier ul { margin: 0; padding-left: 1.1em; font-size: var(--fs-sm); color: var(--text-2); }
+.tier li + li { margin-top: 3px; }
+.tier .tier-meta { font-size: var(--fs-xs); color: var(--text-3); margin-bottom: 6px; }
+.support-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: var(--fs-sm); padding: 3px 0; }
+.support-row .edge-name { font-weight: 500; }
+.support-row .why { color: var(--text-3); font-size: var(--fs-xs); }
+.pill { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 9px; font-size: var(--fs-xs); font-weight: 500; background: var(--surface-3); color: var(--text-2); white-space: nowrap; }
+.pill-ok { background: var(--ok-soft); color: var(--ok-text); }
+.pill-warn { background: var(--warn-soft); color: var(--warn-text); }
+.pill-bad { background: var(--bad-soft); color: var(--bad-text); }
+
+/* Evidence links in the inspector */
+.ev-links { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ev-links-head { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
+.ev-link { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.ev-link-title { font-family: var(--font-read); font-size: var(--fs-md); line-height: 1.3; }
+.ev-link-meta { font-size: var(--fs-xs); color: var(--text-3); margin: 2px 0 6px; }
+.ev-link .field-row { gap: 6px; }
+.ev-link .select { height: 28px; font-size: var(--fs-xs); }
+.ev-link label { font-size: var(--fs-xs); }
+.check-inline { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); margin-top: 10px; cursor: pointer; }
+.check-inline input { accent-color: var(--accent); }
+
+/* Proposals: validation result and identification diff */
+.proposal.is-invalid { border-color: color-mix(in oklch, var(--bad) 40%, var(--line)); }
+.proposal-errors { margin-top: 8px; padding: 7px 9px; border-radius: var(--radius); background: var(--bad-soft); font-size: var(--fs-xs); color: var(--text); }
+.proposal-errors strong { color: var(--bad-text); }
+.proposal-diff { margin-top: 8px; font-size: var(--fs-xs); color: var(--text-2); display: flex; flex-direction: column; gap: 2px; }
+.proposal-diff .changed { color: var(--warn-text); font-weight: 500; }
+.staged-src .proposal-title { font-family: var(--font-read); font-weight: 500; font-size: var(--fs-lg); }
+
+/* Sources: injection flags and verification */
+.src-flags { margin-top: 8px; display: flex; gap: 6px; align-items: flex-start; padding: 6px 8px; border-radius: var(--radius); background: var(--bad-soft); font-size: var(--fs-xs); }
+.src-flags .i { width: 14px; height: 14px; color: var(--bad); flex: none; margin-top: 1px; }
+.digest-verify { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+
+/* Causal question card */
+.question-card { border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.question-card summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 20px; cursor: pointer; list-style: none; }
+.question-card summary::-webkit-details-marker { display: none; }
+.question-card summary .muted { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.question-card summary .chev { transition: transform 200ms var(--ease-out); color: var(--text-3); }
+.question-card[open] summary .chev { transform: rotate(180deg); }
+.question-body { padding: 4px 20px 16px; max-width: 900px; }
+.question-body .input, .question-body .select { height: 30px; font-size: var(--fs-sm); }
+
+/* Data view */
+.data-scroll { padding: 20px 24px 48px; }
+.data-block { max-width: 1040px; }
+.data-block + .data-block { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line); }
+.data-block h3 { font-size: var(--fs-lg); font-weight: 600; margin-bottom: 4px; }
+.data-block > p.muted { max-width: 80ch; margin-bottom: 12px; }
+.map-table, .res-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.map-table th, .map-table td, .res-table th, .res-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.map-table th, .res-table th { font-size: var(--fs-xs); color: var(--text-2); font-weight: 600; background: var(--surface-2); }
+.map-table .select { height: 28px; font-size: var(--fs-sm); max-width: 280px; }
+.res-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.res-table tr.is-rejected td { background: var(--bad-soft); }
+.data-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.verdict-line { display: flex; align-items: center; gap: 8px; font-weight: 600; margin: 10px 0; }
+.verdict-line .i { width: 17px; height: 17px; }
+.verdict-line.is-ok .i { color: var(--ok); }
+.verdict-line.is-bad .i { color: var(--bad); }
+.estimate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 10px; }
+.estimate { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 12px 14px; background: var(--surface); }
+.estimate-label { font-size: var(--fs-xs); color: var(--text-2); font-weight: 500; }
+.estimate-value { font-size: var(--fs-2xl); font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.estimate-ci { font-size: var(--fs-sm); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.estimate-meaning { font-size: var(--fs-xs); color: var(--text-3); margin-top: 6px; line-height: 1.45; }
+.forest { margin-top: 14px; max-width: 640px; }
+.forest svg { width: 100%; height: auto; display: block; }
+.forest .axis { stroke: var(--line-strong); }
+.forest .zero { stroke: var(--text-3); stroke-dasharray: 3 3; }
+.forest text { fill: var(--text-2); font-size: 11px; font-family: var(--font-ui); }
+.forest .ci { stroke: var(--text); stroke-width: 2; }
+.forest .pt { fill: var(--accent); }
+.assumption-list { margin: 8px 0 0; padding-left: 1.1em; font-size: var(--fs-sm); color: var(--text-2); }
+.assumption-list li + li { margin-top: 3px; }
+.empty-data { max-width: 64ch; padding: 24px 0; }
+.empty-data .empty-title { font-size: var(--fs-lg); }
+.empty-data .empty-body { max-width: none; margin-top: 6px; color: var(--text-2); }
+
+@media (max-width: 1080px) {
+  .paths .tiers { grid-template-columns: 1fr; }
+}
+
+.src-actions { flex-wrap: wrap; justify-content: flex-end; }
+.panel-sources { overflow-x: hidden; }

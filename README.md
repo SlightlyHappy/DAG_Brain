@@ -1,241 +1,161 @@
 <div align="center">
 
-![DAG_Brain Hero Banner](docs/assets/hero-banner.svg)
+![DAG Brain](docs/assets/hero-banner.svg)
 
-# 🧠 DAG_Brain (Causal Studio)
+# DAG Brain
 
-**The Open-Source, Self-Hostable AI Causal Modelling, DAGitty Math Engine & Research NotebookLM Environment**
+**An open-source, self-hostable workspace for building causal diagrams you can defend.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-3b82f6.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-10b981.svg)](pyproject.toml)
-[![Self-Hostable: 1-Click](https://img.shields.io/badge/Self--Hostable-1--Click_Launch-f59e0b.svg)](#-one-click-self-hosted-quickstart)
-[![AI Providers: OpenRouter | Ollama | Gemini | Claude | OpenAI](https://img.shields.io/badge/AI-OpenRouter_%7C_Ollama_%7C_Gemini_%7C_Claude-a855f7.svg)](#-universal-ai-provider-router-openrouter--ollama--byok)
-[![Search: Google Scholar | CORE.ac.uk | Sci-Hub | Tavily | OpenAlex](https://img.shields.io/badge/Search-Google_Scholar_%7C_CORE.ac.uk_%7C_Sci--Hub_%7C_Tavily-06b6d4.svg)](#-federated-scholarly--internet-search-integrations)
-[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-34d399.svg)](CONTRIBUTING.md)
+[![Validated](https://img.shields.io/badge/engine-validated-0f766e.svg)](docs/VALIDATION.md)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-34d399.svg)](CONTRIBUTING.md)
 
-[**Why DAG_Brain?**](#-the-gap-were-filling) •
-[**Visual Tour**](#-visual-workspace-tour) •
-[**Scholarly & Web Integrations**](#-federated-scholarly--internet-search-integrations) •
-[**Holistic NotebookLM Features**](#-holistic-research-notebooklm-capabilities) •
-[**1-Click Quickstart**](#-one-click-self-hosted-quickstart) •
-[**Contribute**](#-join-the-project--contribute)
+[What it does](#what-it-does) ·
+[Three kinds of answer](#three-kinds-of-answer) ·
+[Validation](#validation) ·
+[How AI is kept in its place](#how-ai-is-kept-in-its-place) ·
+[Quickstart](#quickstart) ·
+[Privacy and local-only mode](#privacy-and-local-only-mode)
 
 </div>
 
 ---
 
-## 🎯 The Gap We're Filling
+## What it does
 
-Constructing a **Directed Acyclic Graph (DAG)** is one of the most consequential steps in empirical research—whether you are in **Epidemiology, Economics, Psychology, Clinical Medicine, Operations Research, or Causal ML**. Get the graph wrong, and your statistical regression will suffer from **unmeasured confounding**, **overadjustment on a mediator**, or **collider stratification bias (Berkson's / M-bias)**.
+A directed acyclic graph (DAG) is a researcher's causal assumptions written down. Get it wrong and the analysis inherits the error: an unmeasured confounder, a mediator adjusted away, a collider that manufactures an association.
 
-Yet today's research tooling forces authors into three disconnected silos:
+DAG Brain puts three things in one place:
 
-<div align="center">
+1. **A deterministic causal engine** that computes what the graph implies: which paths are open, which adjustment sets identify the effect, which variables could serve as instruments, and which independencies the data should show.
+2. **Data checks and estimation**: test the graph's implications against a dataset, then estimate the effect with an adjustment set the engine has certified, using regression and double machine learning, with an E-value for unmeasured confounding.
+3. **A literature and reasoning assistant** that helps you formulate the question, find and summarise evidence, and challenge assumptions. It can only *propose*; you decide.
 
-![The Gap We Fill](docs/assets/the-gap.svg)
+It works for any field that asks causal questions: epidemiology, clinical research, economics, psychology, the social sciences and causal machine learning.
 
-</div>
+## Three kinds of answer
 
-1. **Manual Graph Calculators (e.g., DAGitty):** Mathematically rigorous at computing $d$-separation and adjustment sets *after* you know the graph, but offer **zero help** in narrowing a research topic, interrogating omitted variables, searching empirical literature, or documenting *why* each arrow exists.
-2. **Literature Synthesis Tools (e.g., Google NotebookLM, Elicit):** Great for reading papers and generating summaries, but have **no formal graph state** or causal identification engine—frequently conflating observational correlation with causal direction.
-3. **One-Shot AI Diagram Generators (e.g., Prompt $\to$ Mermaid):** Ask a generic LLM to draw a causal DAG and it will hallucinate edges, ignore temporal ordering ($t_0 \prec t_1 \prec t_2 \prec t_3$), invent citations, and sycophantically agree with flawed assumptions.
+The app keeps three kinds of statement apart, because they have very different standing.
 
-### 💡 Enter **DAG_Brain (Causal Studio)**
-**DAG_Brain** unites all three worlds into a single, free, self-hostable research environment. It treats a Causal DAG not as a static drawing, but as an **auditable scientific argument** where:
-- Broad ideas are narrowed into formal **PICO/PECO & FINER** causal questions,
-- Autonomous AI agents search the live internet (**Tavily**, **SearXNG**) and scholarly databases (**Google Scholar**, **CORE.ac.uk**, **OpenAlex**, **PubMed/EuropePMC**, **Sci-Hub mirrors**),
-- Saved papers receive instant **AI Executive Digests** (TL;DR, extracted causal claims, confounders controlled, and bias critiques),
-- Every assumption is stress-tested by a **Socratic Interviewer & Reviewer #2 Critic**, and
-- Every path is verified by a **deterministic Pearlian mathematical engine**.
+| | What it tells you | How it is established | How far to trust it |
+|:--|:--|:--|:--|
+| **Structural validity** | Is the graph acyclic? Do arrows respect time order? | Graph algorithms | Exact |
+| **Identification** | Given *this* graph, which adjustment sets identify the effect? Which variables are instrument candidates? What independencies should the data show? | Complete graphical criteria: the generalised adjustment criterion (Shpitser et al. 2010; Perković et al. 2018), the single-door criterion (Pearl 2009), d-separation | Exact, **but only conditional on the graph being right**. Every result lists the assumptions it rests on. |
+| **Scientific support** | How well supported is each arrow the identification depends on? | Your evidence: each arrow carries an evidence class and per-study assessments | A judgement. The app grades it and highlights the weakest assumptions. |
 
----
+Two consequences are made explicit in the interface:
 
-## 🖥️ Visual Workspace Tour
+- An **instrument candidate** passes the necessary graphical conditions under your DAG. The graph cannot establish instrument strength or the exclusion restriction, so the app never calls it a "valid instrument".
+- A graph is never "proven" by data. A failed implication shows the data disagree with the graph; passing tests show only consistency.
 
-<div align="center">
+### Evidence classes
 
-![DAG_Brain Studio Overview](docs/assets/studio-overview.svg)
+Every arrow has an evidence class, and every linked study records its design, population, whether it establishes the direction of the effect, its limitations and your assessment (supports, weakly supports, contradicts, not assessed).
 
-</div>
+| Class | Meaning |
+|:--|:--|
+| Experimental evidence | Relationship investigated through an intervention |
+| Quasi-experimental evidence | Causal inference from a quasi-experimental design (valid under that design's assumptions) |
+| Empirical association | An observed statistical relationship. Does not establish direction. |
+| Mechanistic evidence | Supports a proposed mechanism, not an effect size |
+| Author hypothesis | Proposed by a paper's authors, not tested there |
+| Researcher hypothesis | Your own assumption |
+| AI hypothesis | Proposed by the assistant, until you reclassify it |
 
-The **DAG_Brain Studio** is organized into a synchronized **Tri-Pane Research Workspace**:
+Arrows on the canvas are drawn by class (solid for experimental and quasi-experimental evidence, dashed for associations, hypotheses and AI proposals), so the weakest links are visible at a glance. Linking a paper to an arrow never upgrades the arrow's class by itself: you decide, after recording whether the study establishes direction. Cross-sectional designs are marked "direction not established" automatically.
 
-| Workspace Pane | What It Does | Key Superpowers |
-| :--- | :--- | :--- |
-| **📚 Left Pane: Literature, Web & Full-Text Vault** | Federated search across **Google Scholar**, **CORE.ac.uk**, **PubMed/EuropePMC**, **OpenAlex**, & **Tavily Web** with 1-click full-text resolution. | • **✨ AI Executive Digest on Every Paper:** Instant TL;DR, extracted causal claims, confounders controlled, & bias warnings<br>• **Direct Full-Text Portals:** 1-click links to `scholar.google.com`, `core.ac.uk`, `sci-hub.name`, and publisher PDFs<br>• **Live Multi-Style Citation Engine:** Switch instantaneously between **APA 7th**, **AMA / Vancouver `[1]`**, **Chicago**, **Harvard**, **IEEE**, and **BibTeX** |
-| **🕸️ Center Pane: Interactive DAGitty Canvas & Holistic Research Studio** | Build and mathematically validate your causal model alongside 6 integrated research views. | • **Real-time Pearlian $d$-Separation & Backdoor Banner** + 1-Click **Apply Minimal Adjustment Set**<br>• **📊 Evidence Synthesis Matrix:** Elicit-style comparative table of all saved papers<br>• **🎙️ 2-Host Audio Lab Briefing:** NotebookLM-style dialogue between *Lead PI* & *Methodologist Reviewer #2* with **Browser TTS Audio Playback**<br>• **Competing Worldviews:** Fork & diff alternative DAG hypotheses |
-| **🧠 Right Pane: Autonomous & Socratic AI Collaborator** | Five specialized AI personas + a 1-click **🚀 Autonomous Deep Research** loop. | • **🎯 Topic Refiner:** Narrows broad topics into PICO/PECO & FINER causal models<br>• **🗣️ Socratic Interviewer:** Clarifies definitions, scales, & temporal waves ($t_0 \dots t_3$)<br>• **⚖️ Critic (Reviewer #2):** Hunts for latent confounders ($U$), reverse causality, & collider bias<br>• **📚 Lit & Web Scout** + **🚀 Auto-Research:** Autonomously browses web & literature, saves & summarizes papers, and proposes edges |
+## Validation
 
----
+The engine and estimators are checked against independent implementations and against data with a known true effect. The full report, with every number reproducible from a fixed seed, is in [**docs/VALIDATION.md**](docs/VALIDATION.md). In summary:
 
-## 🌐 Federated Scholarly & Internet Search Integrations
+- **d-separation** agrees 100% with an independent moral-graph implementation and with `networkx` on thousands of random queries.
+- **Adjustment sets** agree 100% with an independent implementation of the criterion's path-based definition, checked on every subset of variables in hundreds of random graphs. Existence of an adjustment set agrees with brute-force search, and every reported minimal set is valid and inclusion-minimal.
+- **Exactness**: on random linear structural causal models, every set the engine certifies reproduces the true total effect to machine precision (using the exact population covariance); every set it rejects is biased.
+- **Coverage**: regression adjusting for the engine's set gives 95% intervals that cover the truth at close to the nominal rate.
+- **Double machine learning** removes non-linear confounding bias that ordinary regression leaves in.
+- **Independence tests**: type I error and power are measured and reported for partial correlation and the generalised covariance measure, including where each over-rejects.
+- Textbook graphs (M-bias, butterfly bias, mediators, front-door, instruments) give the published answers.
 
-`DAG_Brain` connects your research directly to the world's scholarly and web ecosystems:
+Reproduce it:
 
-1. **🎓 Google Scholar (`https://scholar.google.com/`):**
-   * Supports automated scholarly search via **SerpApi (`google_scholar`)** & **Semantic Scholar Graph API**, plus 1-click deep links to open any query or paper directly on `scholar.google.com`.
-2. **🔓 CORE (`https://core.ac.uk/`):**
-   * Native integration with the **CORE API v3** (300M+ open-access metadata records and full texts) plus direct `core.ac.uk` portal links.
-3. **⚡ Sci-Hub & Custom DOI Full-Text Resolver (`https://sci-hub.name/`):**
-   * Every saved paper and search result includes a 1-click full-text resolution button configurable in Settings (`SCIHUB_MIRROR_URL`, defaulting to `https://sci-hub.name`, or pointable to your university's EzProxy / LibKey / Unpaywall resolver).
-4. **🌍 Tavily AI Search & SearXNG (Autonomous Internet Research):**
-   * Connect **Tavily (`TAVILY_API_KEY`)** or a self-hosted **SearXNG** instance so the AI agent can autonomously search the live web, preprints, policy reports, and technical blogs.
-5. **🧬 OpenAlex, Crossref & PubMed / EuropePMC:**
-   * Works out of the box with zero API keys required—reconstructing abstracts, extracting sample sizes ($N$), and grading study designs (`Meta-Analysis`, `RCT`, `Quasi-Experimental / MR / IV`, `Longitudinal Cohort`, `Cross-Sectional`).
+```bash
+pip install -r requirements-dev.txt
+pytest                                  # 75 tests, under a minute
+python scripts/validation_report.py     # full study, writes docs/VALIDATION.md
+```
 
----
+## How AI is kept in its place
 
-## 📓 Holistic "Research NotebookLM" Capabilities
+```mermaid
+flowchart TB
+    A["AI reasoning<br/>Topic · Interview · Critique · Literature · Methods · Research"] -->|structured proposals only| B
+    B["Validation and approval<br/>schema · references · acyclicity · time order<br/>citations must exist · identification diff · human decision"] -->|accepted changes| C
+    C["Authoritative research state<br/>graph · variables · evidence links · question<br/>versions · audit log with provenance"] --> D
+    D["Deterministic causal engine<br/>d-separation · adjustment · instruments · implications"] --> E
+    E["Outputs<br/>diagnostics · data checks · estimates · exports"]
+    R["Retrieved papers, web pages, uploaded PDFs"] -. untrusted data, never instructions .-> A
+```
 
-Beyond drawing DAGs, `DAG_Brain` acts as a complete research ideation and synthesis environment:
+- The assistant **cannot change the graph or the library**. It emits proposals that are validated (schema, existing variables, no cycles, citations that resolve to real sources) and annotated with what would change in identification. You accept or reject each one, and acceptance re-validates against the current graph.
+- Research runs **stage** sources for review instead of saving them. AI-proposed arrows are always "AI hypothesis".
+- Every accepted change creates a **graph version** and an audit entry with the proposal id, model, provider, a hash of the prompt and the sources used.
+- **Prompt injection**: retrieved text is wrapped as inert data, delimiter look-alikes are neutralised, and instruction-like content is detected and flagged. Flagged sources are excluded from automatic proposals. Because the model can only produce validated proposals, nothing a document says can change your research state on its own.
+- Graph facts (paths, adjustment sets, identifiability) always come from the engine, never from the model.
 
-* **🎯 Research Topic Narrowing (PICO / PECO & FINER Architect):** Not sure of your exact variables yet? Switch to **🎯 Topic** mode, describe a general area of interest, and the AI will survey the literature and propose 3 concrete causal formulations (Observational Cohort, Mediation, and Quasi-Experimental IV/DiD).
-* **🚀 Autonomous Multi-Hop Deep Research (`🚀 Auto-Research`):** Click one button and the agent autonomously executes multi-angle queries across scholarly & web engines, deduplicates and saves top papers into your Vault, runs **AI Paper Summarization** on each, and proposes new DAG nodes and edges.
-* **✨ Instant AI Paper Executive Digests:** Every paper in your Vault is automatically distilled into:
-  * **TL;DR Summary**
-  * **Extracted Causal Claims ($A \to B$)**
-  * **Confounders Controlled / Identification Strategy**
-  * **Reviewer #2 Limitations & Bias Check**
-  * **1-Click `📓 + Digest to Notebook`**
-* **📊 Evidence Synthesis Matrix Tab:** View all saved literature side-by-side in a structured matrix comparing study designs, sample sizes ($N$), AI summaries, bias critiques, and linked DAG edges.
-* **🎙️ 2-Host Audio Lab Briefing (with Browser Voice Playback):** Click **🎙️ Audio Lab Briefing** to generate a lively dialogue between **Dr. Aria Vance (Lead PI)** and **Prof. Marcus Sterling (Causal Methodologist)** debating your current DAG, open backdoor paths, and literature vault—and click **🔊 Listen (TTS Audio)** to hear it read aloud!
+## Features
 
----
+- **Canvas**: drag variables, draw arrows and shared latent causes (↔), arrange by time wave, pan and zoom, keyboard control, undo.
+- **Identification strip**: verdict, total or direct effect, minimal adjustment sets (click to apply), instrument candidates, warnings for mediators, colliders and descendants of the outcome, every path with what blocks it, the assumptions and the evidence grading.
+- **Causal question**: a domain-neutral structure (units, exposure, comparator, outcome, time horizon, estimand) with optional framings: PICO for clinical interventions, PECO for epidemiological exposures, policy counterfactuals for economics, interventions on structural causal models for ML, and longitudinal or mediation designs for psychology.
+- **Data**: upload a CSV, map columns to variables, test implied independencies (partial correlation or the generalised covariance measure, with Holm and Benjamini–Hochberg correction), and estimate the effect with HC3-robust regression with a bootstrap, plus partially linear DML or AIPW with cross-fitted gradient boosting, overlap diagnostics and E-values.
+- **Literature**: OpenAlex, Crossref, PubMed/Europe PMC, CORE, optional Semantic Scholar, SerpApi (Google Scholar) and Tavily. Legal full-text discovery via Unpaywall, Europe PMC open-access links, CORE and an optional institutional EZproxy prefix. Upload your own PDFs; they stay on your machine.
+- **Notebook, evidence matrix, lab briefing, worldviews** (fork and compare alternative graphs), and **exports** to DAGitty, R (dagitty/ggdag), Python (DoWhy), LaTeX TikZ and a Markdown dossier with the three tiers.
+- **Citation styles**: APA 7, Vancouver, Chicago, Harvard, IEEE and BibTeX.
 
-## 🔄 The 5-Stage Auditable Causal Workflow
-
-<div align="center">
-
-![Animated Causal Discovery Workflow](docs/assets/workflow-demo.svg)
-
-</div>
-
----
-
-## 📊 How DAG_Brain Compares
-
-| Capability | **DAG_Brain (Causal Studio)** | **DAGitty** | **Google NotebookLM** | **Generic LLM + Mermaid** |
-| :--- | :---: | :---: | :---: | :---: |
-| **Exact Pearlian $d$-Separation & Backdoor Solver** | ✅ | ✅ | ❌ | ❌ |
-| **Minimal Sufficient Adjustment Sets (Total & Direct)** | ✅ | ✅ | ❌ | ❌ |
-| **Collider Trap & Overadjustment Bias Warnings** | ✅ | ⚠️ *(Partial)* | ❌ | ❌ |
-| **Instrumental Variable (IV) Structural Discovery** | ✅ | ✅ | ❌ | ❌ |
-| **Research Topic Narrowing (PICO / PECO / FINER)** | ✅ | ❌ | ⚠️ *(Generic)* | ⚠️ *(Unstructured)* |
-| **Autonomous Web & Scholarly Deep Research Agent** | ✅ | ❌ | ❌ | ❌ |
-| **Google Scholar, CORE.ac.uk, Sci-Hub, OpenAlex, PubMed & Tavily** | ✅ | ❌ | ❌ | ❌ |
-| **AI Paper Executive Digests + Evidence Synthesis Matrix** | ✅ | ❌ | ✅ | ❌ |
-| **2-Host Audio / Text Research Lab Briefing** | ✅ | ❌ | ✅ | ❌ |
-| **Dynamic Citation Formatter (APA 7, AMA, Chicago, Harvard, IEEE, BibTeX)** | ✅ | ❌ | ❌ | ❌ |
-| **Competing Worldviews (Fork & Diff Adjustment Sets)** | ✅ | ❌ | ❌ | ❌ |
-| **Export to R (`ggdag`), Python (`DoWhy`), LaTeX (`TikZ`), & DAGitty** | ✅ | ⚠️ *(R/DAGitty)* | ❌ | ❌ |
-| **100% Free, Open-Source & One-Click Self-Hostable (Ollama / OpenRouter)** | ✅ | ✅ | ❌ *(Cloud Lock-in)* | ❌ |
-
----
-
-## 🚀 One-Click Self-Hosted Quickstart
-
-We engineered `DAG_Brain` so that **any researcher, student, or lab** can launch it locally in **one click**—without needing to configure PostgreSQL, Redis, or complex Node.js build pipelines.
-
-### Option 1: Native One-Click Launch (Windows, macOS, Linux)
-
-Clone the repository and run the launcher for your OS. It automatically sets up the Python environment, initializes the local WAL-mode SQLite vault in `./data`, pre-loads two multi-disciplinary case studies, and opens `http://127.0.0.1:8000` in your browser:
+## Quickstart
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/DAG_Brain.git
 cd DAG_Brain
 ```
 
-* **Windows (Double-Click in Explorer or run in CMD):**
-  ```cmd
-  start.bat
-  ```
-* **Windows (PowerShell):**
-  ```powershell
-  .\start.ps1
-  ```
-* **macOS / Linux:**
-  ```bash
-  chmod +x start.sh && ./start.sh
-  ```
+| System | Command |
+|:--|:--|
+| Windows | `start.bat` or `.\start.ps1` |
+| macOS / Linux | `chmod +x start.sh && ./start.sh` |
+| Docker | `docker compose up --build -d` |
+| Docker with a local Ollama model | `docker compose --profile local-ai up --build -d` |
 
-### Option 2: Docker Compose One-Click Launch
+The launcher creates a Python environment, initialises a SQLite database in `./data` with two worked examples, and opens `http://127.0.0.1:8000`.
 
-```bash
-# Launch DAG_Brain Studio on http://localhost:8000
-docker compose up --build -d
+### AI providers
 
-# Or launch with a bundled local Ollama container for 100% air-gapped AI:
-docker compose --profile local-ai up --build -d
-```
+Open **AI and search settings** (top right) or copy `.env.example` to `.env`. Supported: OpenRouter, Ollama (auto-detected on `localhost:11434`), Gemini, OpenAI, Anthropic, and any OpenAI-compatible server (LM Studio, vLLM). With no provider configured, a rule-based assistant still answers using the engine's results.
 
----
+## Privacy and local-only mode
 
-## ⚡ Universal AI Provider Router (OpenRouter + Ollama + BYOK)
+Using Ollama keeps *model calls* on your machine, but the app also makes other outbound requests by default: literature search, web search, Unpaywall and web fonts. To keep everything local, turn on **local-only mode** (`OFFLINE_MODE=true` or the Privacy setting). Then:
 
-Click **⚡ AI & Search** in the top-right bar of the studio (or copy `.env.example` to `.env`) to configure your AI models and search keys:
+- every outbound HTTP request from the backend is refused before it leaves the process, except to `localhost` (Ollama, LM Studio) — enforced in one place, [`backend/net.py`](backend/net.py), and covered by tests;
+- the interface does not load web fonts;
+- uploaded datasets and PDFs stay in `./data/uploads`.
 
-1. **🌐 OpenRouter (`openrouter`) — *Recommended for Cloud Flexibility***
-   * Use a single API key (`OPENROUTER_API_KEY`) to access `google/gemini-2.5-pro`, `google/gemini-2.5-flash`, `anthropic/claude-3.7-sonnet`, `deepseek/deepseek-r1`, `openai/gpt-4o`, `meta-llama/llama-3.3-70b-instruct`, and `qwen/qwen-2.5-72b-instruct`.
-2. **🔒 Ollama (`ollama`) — *100% Free, Private & Air-Gapped***
-   * Automatically discovers locally installed models at `http://localhost:11434` (`llama3.2`, `deepseek-r1`, `qwen2.5`, `mistral`)—ideal for clinical or proprietary datasets that cannot leave your machine.
-3. **🔑 Direct Provider APIs (`gemini`, `openai`, `anthropic`, `custom`)**
-   * Native support for Google Gemini, OpenAI, Anthropic Claude, and custom OpenAI-compatible servers (**LM Studio**, **vLLM**, university gateways).
-4. **🌍 Search & Full-Text Keys (`tavily`, `core`, `serpapi`, `scihub_mirror_url`)**
-   * Add your **Tavily API Key** for live agentic web search, **CORE.ac.uk API Key** for higher open-access rate limits, **SerpApi Key** for automated Google Scholar scraping, and customize your **Sci-Hub / DOI Resolver URL** (`https://sci-hub.name`).
+For a genuinely air-gapped deployment you must also control the host itself: no telemetry from the OS or the browser, no outbound network at the firewall, and dependencies installed from a local mirror. DAG Brain's local-only mode covers the application; it cannot certify the machine around it.
 
----
+## Limitations
 
-## 🏛️ System Architecture
+- Identification covers one exposure and one outcome at a time, by covariate adjustment, plus graphical instrument candidates. Front-door estimation and g-methods for time-varying treatments are not implemented.
+- The direct effect uses the single-door criterion, which identifies a path coefficient in linear models; for non-linear models it is a controlled direct effect.
+- Estimation supports the total effect. Implication tests can lack power, and statistically equivalent graphs cannot be told apart by data.
+- AI summaries are labelled unverified until you check them against the paper.
 
-For deep technical specifications of the Pearlian $d$-separation algorithm, epistemic state schemas, and multi-agent JSON protocols, see [**ARCHITECTURE.md**](ARCHITECTURE.md).
+## Documentation
 
-```mermaid
-flowchart LR
-    subgraph UI["Frontend Studio (Tri-Pane SPA)"]
-        Vault["📚 Source & Citation Vault\n(Scholar • CORE • Sci-Hub • AI Digests)"]
-        Canvas["🕸️ DAGitty Canvas + Holistic Views\n(Notebook • Evidence Matrix • Lab Briefing)"]
-        Chat["🧠 Socratic & Auto-Research Agent\n(Topic Refiner • Critic #2 • Proposals)"]
-    end
+- [ARCHITECTURE.md](ARCHITECTURE.md): layers, data model, algorithms and references.
+- [docs/VALIDATION.md](docs/VALIDATION.md): the validation study.
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to contribute.
 
-    subgraph Core["Python ASGI Backend (Starlette / NetworkX)"]
-        Math["🧮 Deterministic Causal Engine\n• Exact Pearlian d-Separation\n• Minimal Adjustment Sets\n• Collider & Mediator Trap Guards\n• IV Candidate Discovery"]
-        Agents["🤖 Multi-Agent Orchestrator\n• Topic Refiner (PICO/FINER)\n• Autonomous Deep Researcher\n• Socratic & Critic #2\n• 2-Host Lab Briefing Generator"]
-        Lit["🌐 Federated Lit & Web Engine\n• OpenAlex • CORE.ac.uk • PubMed\n• Google Scholar • Tavily • Sci-Hub\n• APA 7 / AMA / Chicago / BibTeX"]
-        Router["⚡ LLM Router\n• OpenRouter • Ollama\n• Gemini • OpenAI • Claude"]
-    end
+## License
 
-    subgraph DB["Zero-Config Storage"]
-        SQLite[("SQLite WAL\nProjects, Snapshots,\nSources & Audit Log")]
-    end
-
-    UI <==>|JSON REST API| Core
-    Agents --> Math
-    Agents --> Lit
-    Agents --> Router
-    Core --> DB
-```
-
----
-
-## 🤝 Join the Project & Contribute!
-
-We are building **DAG_Brain** as a community-driven public good for researchers, students, and data scientists worldwide. Whether you write code or design causal studies in your academic field, **we would love your contributions!**
-
-### 🌟 High-Impact Areas Open for Contributors
-- [ ] **📄 Local PDF Full-Text & Table Ingestion:** Integrate `Docling` / `PyMuPDF` to drag-and-drop local PDFs into the Left Vault and automatically extract regression tables, sample sizes ($N$), and effect estimates.
-- [ ] **🔌 Model Context Protocol (MCP) Server:** Expose `DAG_Brain` tools (`propose_edge`, `check_d_separation`, `find_adjustment_sets`) over MCP so Claude Desktop, Cursor, and Gemini CLI can interact with the live canvas.
-- [ ] **🧬 Additional Causal Identification Algorithms:**
-  - Frontdoor Criterion automatic solver
-  - Time-varying confounding & Robins' $g$-methods (`IPTW` / Marginal Structural Models) detector
-  - Automated **E-value** sensitivity analysis calculator for unmeasured confounders ($U$)
-  - Single-World Intervention Graphs (**SWIGs**) view
-- [ ] **📚 Zotero & PubMed Full-Text Sync:** Direct two-way synchronization with local Zotero collections.
-- [ ] **🌍 Discipline Benchmark Templates:** Contribute gold-standard reference DAGs in Epidemiology, Labor Economics, Clinical Oncology, Climate Science, Psychology, and Algorithmic Fairness (`backend/seed_data.py`).
-
-👉 **Read our [Contribution Guide (CONTRIBUTING.md)](CONTRIBUTING.md) and [System Architecture (ARCHITECTURE.md)](ARCHITECTURE.md) to get started!**
-
----
-
-## 📜 License
-
-Released under the permissive [**Apache License 2.0**](LICENSE). Free forever to use, self-host, modify, and deploy in academic, personal, or enterprise environments.
+[Apache License 2.0](LICENSE).

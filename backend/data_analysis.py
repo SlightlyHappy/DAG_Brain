@@ -366,7 +366,8 @@ def estimate_effect(
         Xb = np.column_stack([xv[idx], Z[idx]]) if Z.size else xv[idx].reshape(-1, 1)
         Db = np.column_stack([np.ones(n), Xb])
         boots.append(np.linalg.lstsq(Db, yv[idx], rcond=None)[0][1])
-    reg["bootstrap_ci"] = [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))]
+    if boots:
+        reg["bootstrap_ci"] = [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))]
     reg["label"] = "Linear regression adjustment (HC3 robust SE, percentile bootstrap)"
     reg["meaning"] = (
         "Difference in mean outcome between exposed and unexposed, holding the adjustment set fixed (assumes a linear outcome model)."
